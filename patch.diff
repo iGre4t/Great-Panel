@@ -1,0 +1,59 @@
+﻿*** Begin Patch
+*** Update File: app.js
+@@
+-      const content = document.querySelector('.content');
+-      if (content) content.appendChild(sec);
++      const content = document.querySelector('.content');
++      if (content) content.appendChild(sec);
++      // Add explicit save button and message
++      const card = sec.querySelector('.card');
++      if (card) {
++        const actions = document.createElement('div');
++        actions.className = 'modal-actions';
++        actions.innerHTML = '<button type="button" class="btn primary" id="dev-save">Save</button>';
++        card.appendChild(actions);
++        const msg = document.createElement('p');
++        msg.id = 'dev-msg';
++        msg.className = 'hint';
++        card.appendChild(msg);
++      }
++      // Mark inputs with keys and set initial values
++      const st = sec.querySelector('#site-title');
++      if (st) st.setAttribute('data-save-key', 'gamenet_site_title');
++      const to = sec.querySelector('#time-offset');
++      if (to) {
++        to.setAttribute('data-save-key', 'gamenet_time_offset_min');
++        const raw = localStorage.getItem('gamenet_time_offset_min');
++        let min = Number(raw);
++        if (!Number.isFinite(min)) min = 210; // default +03:30
++        const sign = min >= 0 ? '+' : '-';
++        const abs = Math.abs(min);
++        const hh = String(Math.floor(abs/60)).padStart(2,'0');
++        const mm = String(abs%60).padStart(2,'0');
++        to.value = `${sign}${hh}:${mm}`;
++      }
++      // Save handler
++      const saveBtn = sec.querySelector('#dev-save');
++      if (saveBtn) {
++        saveBtn.addEventListener('click', () => {
++          const titleVal = String((document.getElementById('site-title')||{}).value || '').trim();
++          localStorage.setItem('gamenet_site_title', titleVal);
++          if (typeof applyTitle === 'function') applyTitle(titleVal);
++          const offText = String((document.getElementById('time-offset')||{}).value || '').trim();
++          const m = offText.match(/^([+-])?(\d{1,2})(?::(\d{2}))?$/);
++          let minutes = 210;
++          if (m) {
++            const sign = m[1] === '-' ? -1 : 1;
++            const hh = parseInt(m[2]||'0', 10);
++            const mm = parseInt(m[3]||'0', 10);
++            minutes = sign * (hh*60 + mm);
++          }
++          localStorage.setItem('gamenet_time_offset_min', String(minutes));
++          const hint = document.getElementById('dev-msg');
++          if (hint) { hint.textContent = 'Saved'; setTimeout(() => hint.textContent = '', 1500); }
++        });
++      }
+       }
+ 
+       // Remove old site-title field from Settings tab if exists
+*** End Patch

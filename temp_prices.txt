@@ -1,0 +1,6 @@
+  const zeroPrices = () => ({ p1: 0, p2: 0, p3: 0, p4: 0, birthday: 0, film: 0 });
+  const formatPrice = (n) => (Number.isFinite(n) ? n : 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const parsePrice = (s) => { const n = parseInt(String(s||'').replace(/,/g,''), 10); return isNaN(n) ? 0 : n; };
+  const pricesEqual = (a,b) => ['p1','p2','p3','p4','birthday','film'].every(k => Number(a[k]||0) === Number(b[k]||0));
+  const getEffectivePrices = (branch, sys) => (sys.prices == null ? (branch.defaultPrices || zeroPrices()) : sys.prices);
+

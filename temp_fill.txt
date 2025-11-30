@@ -1,0 +1,24 @@
+    fillDefaultPricesForm(branch);
+    renderSystemsTable(branch);
+  };
+
+  // Add branch
+  qs('#add-branch-form')?.addEventListener('submit', (e) => {
+    fillDefaultPricesForm(branch);
+    renderSystemsTable(branch);
+  };
+
+  qs('#default-prices-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+      fillDefaultPricesForm(branch);
+      renderSystemsTable(branch);
+    };
+    const btn = qs('#manage-periods');
+    if (btn){ btn.onclick = () => openPeriodsModal(branch.id); }
+  }
+      fillDefaultPricesForm(branch);
+      renderSystemsTable(branch);
+      m.classList.add('hidden');
+    }, { once: true });
+    m.classList.remove('hidden');
+  }

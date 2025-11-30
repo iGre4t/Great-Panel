@@ -1,0 +1,21 @@
+  qs('#system-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const branchId = form.dataset.branchId;
+    const systemId = form.dataset.systemId;
+    const branch = branches.find(b => b.id === branchId);
+    const sys = branch?.systems?.find(s => s.id === systemId);
+    if (!branch || !sys) return;
+    sys.name = qs('#system-name').value.trim() || sys.name;
+    // Validate non-empty and parse
+    const values = [ '#price-1p', '#price-2p', '#price-3p', '#price-4p', '#price-birthday', '#price-film' ]
+      .map(sel => qs(sel).value.trim());
+    if (values.some(v => v === '')) { (qs('#system-form-msg').textContent = 'همه قیمت‌ها الزامی هستند'); return; }
+    const toNum = (v) => { const n = parseInt(String(v).replace(/,/g,''), 10); return isNaN(n) ? 0 : n; };
+    const newPrices = {
+      p1: toNum(qs('#price-1p').value),
+      p2: toNum(qs('#price-2p').value),
+      p3: toNum(qs('#price-3p').value),
+      p4: toNum(qs('#price-4p').value),
+      birthday: toNum(qs('#price-birthday').value),
+      film: toNum(qs('#price-film').value)

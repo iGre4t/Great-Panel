@@ -1,0 +1,21 @@
+    // Load persisted title and favicon
+    const storedTitle = localStorage.getItem(SITE_TITLE_KEY);
+    if (storedTitle) applyTitle(storedTitle);
+    else {
+      const def = document.querySelector('.sidebar .title')?.textContent?.trim() || '';
+      if (def) applyTitle(def);
+    }
+    const fav = localStorage.getItem(FAVICON_KEY);
+    if (fav) applyFavicon(fav);
+
+    // Hook title input
+    document.addEventListener('input', (e) => {
+      const t = e.target;
+      if (t && t.id === 'site-title'){
+        const val = String(t.value || '').trim();
+        localStorage.setItem(SITE_TITLE_KEY, val);
+        applyTitle(val);
+      }
+      if (t && t.id === 'time-offset'){
+        const raw = String(t.value || '').trim();
+        // Accept "+HH:MM" or "-HH:MM" or plain minutes

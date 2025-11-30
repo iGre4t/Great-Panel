@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>پنل مدیریت</title>
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Login View -->
+    <main id="login-view" class="view hidden">
+      <section class="auth-card">
+        <div class="brand">
+          <div class="logo">GN</div>
+          <h1>پنل مدیریت</h1>
+          <p class="muted">ورود برای ادامه مدیریت</p>
+        </div>
+        <form id="login-form" class="form">
+          <label class="field">
+            <span>نام کاربری</span>
+            <input id="username" type="text" inputmode="text" autocomplete="username" placeholder="مثال: admin" required />
+          </label>
+          <label class="field">
+            <span>رمز عبور</span>
+            <input id="password" type="password" autocomplete="current-password" placeholder="••••" required />
+          </label>
+          <button type="submit" class="btn primary">ورود</button>
+          <p class="hint">نام کاربری: <b>admin</b> — رمز: <b>qwerty</b></p>
+          <p id="login-error" class="error" role="alert" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+
+    <!-- App View -->
+    <div id="app-view" class="view hidden">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="logo small">GN</div>
+          <div class="title">مدیریت</div>
+        </div>
+        <nav class="nav">
+          <button class="nav-item active" data-tab="home" aria-current="page">
+            <span>خانه</span>
+          </button>
+          <button class="nav-item" data-tab="users">
+            <span>کاربران</span>
+          </button>
+          <button class="nav-item" data-tab="branches">
+            <span>مدیریت شعب</span>
+          </button>
+          <button class="nav-item" data-tab="settings">
+            <span>تنظیمات</span>
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          <button id="logout" class="btn ghost">خروج</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <button id="sidebarToggle" class="icon-btn" title="کوچک/بزرگ کردن سایدبار" aria-label="کوچک/بزرگ کردن سایدبار">≡</button>
+          <h2 id="page-title">خانه</h2>
+          <div class="spacer"></div>
+          <div id="live-clock" class="clock" aria-live="polite"></div>
+        </header>
+
+        <section id="tab-home" class="tab active">
+          <div class="cards">
+            <div class="card kpi">
+              <div class="kpi-label">تعداد کاربران</div>
+              <div class="kpi-value" id="kpi-users">0</div>
+            </div>
+            <div class="card kpi">
+              <div class="kpi-label">کاربران فعال</div>
+              <div class="kpi-value" id="kpi-active">0</div>
+            </div>
+            <div class="card kpi">
+              <div class="kpi-label">تنظیمات</div>
+              <div class="kpi-value">3</div>
+            </div>
+          </div>
+          <div class="card">
+            <h3>خوش آمدید</h3>
+            <p class="muted">این یک نمونه ساده از پنل مدیریت راست‌چین با طراحی مدرن است.</p>
+          </div>
+        </section>
+
+        <section id="tab-users" class="tab">
+          <div class="card">
+            <div class="table-header">
+              <h3>کاربران</h3>
+              <button class="btn primary" id="add-user">افزودن کاربر</button>
+            </div>
+            <div class="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>نام</th>
+                    <th>تلفن</th>
+                    <th>وضعیت</th>
+                  </tr>
+                </thead>
+                <tbody id="users-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Branch Management Tab -->
+        <section id="tab-branches" class="tab">
+          <div class="sub-layout">
+            <aside class="sub-sidebar">
+              <div class="sub-header">مدیریت شعب</div>
+              <nav id="branch-subnav" class="sub-nav">
+                <button class="sub-item active" data-view="manage">عمومی</button>
+                <div id="branch-items"></div>
+              </nav>
+            </aside>
+            <div class="sub-content">
+              <!-- Manage view: add/list branches -->
+              <div id="branch-manage-view" class="card">
+                <div class="table-header">
+                  <h3>مدیریت شعب</h3>
+                </div>
+                <form id="add-branch-form" class="form grid">
+                  <label class="field">
+                    <span>نام شعبه</span>
+                    <input type="text" id="branch-name" placeholder="مثلاً: شعبه مرکزی" required />
+                  </label>
+                  <div class="field">
+                    <span>&nbsp;</span>
+                    <button type="submit" class="btn primary">افزودن شعبه</button>
+                  </div>
+                </form>
+                <div class="table-wrapper" style="margin-top:12px;">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>نام شعبه</th>
+                        <th>اقدامات</th>
+                      </tr>
+                    </thead>
+                    <tbody id="branches-body"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Branch page: default prices + systems list -->
+              <div id="branch-page-view" class="hidden">
+                <!-- Default prices of branch -->
+                <div class="card" style="margin-bottom:12px;">
+                  <h3>قیمت‌های پیشفرض شعبه</h3>
+                  <div class="table-header">
+                    <div></div>
+                    <div class="period-toolbar">
+                      <label class="field" style="margin:0;">
+                        <span></span>
+                        <select id="period-select"></select>
+                      </label>
+                      <button id="manage-periods" type="button" class="btn">تنظیم بازه‌های زمانی</button>
+                    </div>
+                  </div>
+                  <form id="default-prices-form" class="form grid">
+                    <label class="field">
+                      <span>تک دسته (ریال/ساعت)</span>
+                      <input class="price-input" id="def-1p" type="text" inputmode="numeric" required />
+                    </label>
+                    <label class="field">
+                      <span>دو دسته (ریال/ساعت)</span>
+                      <input class="price-input" id="def-2p" type="text" inputmode="numeric" required />
+                    </label>
+                    <label class="field">
+                      <span>سه دسته (ریال/ساعت)</span>
+                      <input class="price-input" id="def-3p" type="text" inputmode="numeric" required />
+                    </label>
+                    <label class="field">
+                      <span>چهار دسته (ریال/ساعت)</span>
+                      <input class="price-input" id="def-4p" type="text" inputmode="numeric" required />
+                    </label>
+                    <label class="field">
+                      <span>تولد (ریال)</span>
+                      <input class="price-input" id="def-birthday" type="text" inputmode="numeric" required />
+                    </label>
+                    <label class="field">
+                      <span>فیلم (ریال)</span>
+                      <input class="price-input" id="def-film" type="text" inputmode="numeric" required />
+                    </label>
+                    <div class="field full">
+                      <button type="submit" class="btn primary">ذخیره قیمت‌های پیشفرض</button>
+                    </div>
+                    <p id="default-prices-msg" class="hint full"></p>
+                  </form>
+                </div>
+
+                <div class="card">
+                  <div class="table-header">
+                    <h3 id="branch-page-title">شعبه</h3>
+                    <form id="add-system-form" class="form" style="grid-auto-flow: column; align-items:center; grid-auto-columns: max-content; gap:8px;">
+                      <input id="system-name-input" type="text" placeholder="نام سیستم" required />
+                      <button type="submit" class="btn primary">افزودن سیستم</button>
+                    </form>
+                  </div>
+
+                  <div id="bulk-bar" class="bulk-bar">
+                    <div class="bulk-left">
+                      <label class="chk"><input type="checkbox" id="select-all" /> انتخاب همه</label>
+                    </div>
+                    <form id="bulk-form" class="form bulk-form">
+                      <input class="price-input" id="bulk-1p" type="text" inputmode="numeric" placeholder="تک دسته" required />
+                      <input class="price-input" id="bulk-2p" type="text" inputmode="numeric" placeholder="دو دسته" required />
+                      <input class="price-input" id="bulk-3p" type="text" inputmode="numeric" placeholder="سه دسته" required />
+                      <input class="price-input" id="bulk-4p" type="text" inputmode="numeric" placeholder="چهار دسته" required />
+                      <input class="price-input" id="bulk-birthday" type="text" inputmode="numeric" placeholder="تولد" required />
+                      <input class="price-input" id="bulk-film" type="text" inputmode="numeric" placeholder="فیلم" required />
+                      <button type="submit" class="btn">اعمال تغییرات دسته جمعی</button>
+                    </form>
+                  </div>
+
+                  <div class="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style="width:42px"><input type="checkbox" id="header-select" /></th>
+                          <th>نام سیستم</th>
+                          <th>وضعیت قیمت</th>
+                          <th>تنظیمات</th>
+                        </tr>
+                      </thead>
+                      <tbody id="systems-body"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-settings" class="tab">
+          <div class="card">
+            <h3>تنظیمات</h3>
+            <div class="form grid">
+              <label class="field full">
+                <span>عنوان سایت</span>
+                <input id="site-title" type="text" value="گم نت سیستمی" />
+              </label>
+            </div>
+          </div>
+          <div class="card" style="margin-top:12px;">
+            <h3>حریم خصوصی</h3>
+            <form id="privacy-form" class="form">
+              <label class="field">
+                <span>رمز فعلی</span>
+                <input id="current-pass" type="password" autocomplete="current-password" required />
+              </label>
+              <label class="field">
+                <span>رمز جدید</span>
+                <input id="new-pass" type="password" autocomplete="new-password" minlength="4" required />
+              </label>
+              <label class="field">
+                <span>تکرار رمز جدید</span>
+                <input id="confirm-pass" type="password" autocomplete="new-password" minlength="4" required />
+              </label>
+              <div class="modal-actions">
+                <button type="submit" class="btn primary">ذخیره رمز</button>
+              </div>
+              <p id="privacy-msg" class="hint"></p>
+            </form>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Add User Modal -->
+    <div id="user-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
+      <div class="modal-card">
+        <h3 id="user-modal-title">افزودن کاربر</h3>
+        <form id="user-form" class="form">
+          <label class="field">
+            <span>شماره تلفن (11 رقم)</span>
+            <input id="user-phone" type="text" inputmode="numeric" pattern="^\d{11}$" placeholder="09xxxxxxxxx" required />
+          </label>
+          <label class="field">
+            <span>رمز عبور</span>
+            <input id="user-pass" type="password" minlength="4" required />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn" id="user-cancel">انصراف</button>
+            <button type="submit" class="btn primary">افزودن</button>
+          </div>
+          <p id="user-form-msg" class="hint"></p>
+        </form>
+      </div>
+    </div>
+
+    <!-- System Settings Modal -->
+    <div id="system-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="system-modal-title">
+      <div class="modal-card">
+        <h3 id="system-modal-title">تنظیمات سیستم</h3>
+        <form id="system-form" class="form">
+          <div class="grid full">
+            <label class="field">
+              <span>نام سیستم</span>
+              <input id="system-name" type="text" required />
+            </label>
+          </div>
+          <div class="grid full">
+            <label class="field">
+              <span>تک دسته (ریال/ساعت)</span>
+              <input id="price-1p" class="price-input" type="text" inputmode="numeric" required />
+            </label>
+            <label class="field">
+              <span>دو دسته (ریال/ساعت)</span>
+              <input id="price-2p" class="price-input" type="text" inputmode="numeric" required />
+            </label>
+            <label class="field">
+              <span>سه دسته (ریال/ساعت)</span>
+              <input id="price-3p" class="price-input" type="text" inputmode="numeric" required />
+            </label>
+            <label class="field">
+              <span>چهار دسته (ریال/ساعت)</span>
+              <input id="price-4p" class="price-input" type="text" inputmode="numeric" required />
+            </label>
+          </div>
+          <div class="grid full">
+            <label class="field">
+              <span>تولد (ریال)</span>
+              <input id="price-birthday" class="price-input" type="text" inputmode="numeric" required />
+            </label>
+            <label class="field">
+              <span>فیلم (ریال)</span>
+              <input id="price-film" class="price-input" type="text" inputmode="numeric" required />
+            </label>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn" id="system-cancel">انصراف</button>
+            <button type="submit" class="btn primary">ذخیره</button>
+          </div>
+          <p id="system-form-msg" class="hint"></p>
+        </form>
+      </div>
+    </div>
+
+    <!-- Periods Modal -->
+    <div id="periods-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="periods-modal-title">
+      <div class="modal-card" style="max-width:640px;">
+        <h3 id="periods-modal-title">تنظیم بازه‌های زمانی (۲۴ ساعته)</h3>
+        <div class="form">
+          <div class="hint">بین ۱ تا ۵ بازه تعریف کنید؛ کل ۲۴ ساعت را بدون هم‌پوشانی و بدون فاصله پوشش دهید.</div>
+          <div id="periods-list" class="periods-list"></div>
+          <div style="display:flex; gap:8px;">
+            <button id="add-period" type="button" class="btn">+ افزودن بازه</button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" id="periods-cancel">انصراف</button>
+          <button type="button" class="btn primary" id="periods-save">ذخیره</button>
+        </div>
+        <p id="periods-msg" class="hint"></p>
+      </div>
+    </div>
+
+    <!-- Dialog Modal (alerts and confirms) -->
+    <div id="dialog-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+      <div class="modal-card" style="max-width:420px;">
+        <h3 id="dialog-title">پیام</h3>
+        <div class="form">
+          <div id="dialog-text" class="hint" style="white-space: pre-wrap;"></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn" id="dialog-cancel">انصراف</button>
+          <button type="button" class="btn primary" id="dialog-ok">باشه</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="branches.js"></script>
+    <script src="app.js"></script>
+  </body>
+  </html>
