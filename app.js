@@ -1,8 +1,6 @@
 ﻿const AUTH_KEY = "gamenet_auth";
 const PASS_KEY = "gamenet_admin_password";
 const USERNAME_KEY = "gamenet_username";
-const DEFAULT_ADMIN_USER = "admin";
-const DEFAULT_ADMIN_PASS = "qwerty";
 
 // Demo in-memory users
 const USER_DB = [
@@ -57,7 +55,7 @@ function setActiveTab(tab) {
 document.addEventListener('DOMContentLoaded', () => {
   // Init password storage
   const __curPass = localStorage.getItem(PASS_KEY);
-  if (!__curPass || __curPass === '1234' || __curPass === '12345') localStorage.setItem(PASS_KEY, DEFAULT_ADMIN_PASS);
+  if (!__curPass || __curPass === '1234') localStorage.setItem(PASS_KEY, '12345');
   const token = localStorage.getItem(AUTH_KEY);
   setView(Boolean(token));
 
@@ -65,14 +63,11 @@ document.addEventListener('DOMContentLoaded', () => {
   try {
     const uInput = qs('#username');
     if (uInput && typeof uInput.placeholder === 'string') {
-      uInput.placeholder = uInput.placeholder.replace(/developer/i, DEFAULT_ADMIN_USER).replace(/admin/i, DEFAULT_ADMIN_USER);
+      uInput.placeholder = uInput.placeholder.replace(/admin/i, 'developer');
     }
     const hint = document.querySelector('#login-form .hint');
     if (hint && typeof hint.innerHTML === 'string') {
-      hint.innerHTML = hint.innerHTML
-        .replace(/developer/i, DEFAULT_ADMIN_USER)
-        .replace(/admin/i, DEFAULT_ADMIN_USER)
-        .replace(/12345|1234/gi, DEFAULT_ADMIN_PASS);
+      hint.innerHTML = hint.innerHTML.replace(/admin/i, 'developer').replace(/1234/g, '12345');
     }
   } catch {}
 
@@ -83,8 +78,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const user = qs('#username').value.trim();
     const pass = qs('#password').value;
     const err = qs('#login-error');
-    const saved = localStorage.getItem(PASS_KEY) || DEFAULT_ADMIN_PASS;
-    if (user === DEFAULT_ADMIN_USER && pass === saved) {
+    const saved = localStorage.getItem(PASS_KEY) || '12345';
+    if (user === 'developer' && pass === saved) {
       localStorage.setItem(AUTH_KEY, 'ok');
       localStorage.setItem(USERNAME_KEY, user);
       err.textContent = '';
@@ -116,7 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const now = new Date();
     const time = now.toLocaleTimeString('fa-IR', { hour: '2-digit', minute:'2-digit', second:'2-digit', hour12:false, timeZone: tz });
     const dateFa = new Intl.DateTimeFormat('fa-IR-u-ca-persian', { weekday:'long', year:'numeric', month:'long', day:'numeric', timeZone: tz }).format(now);
-    el.innerHTML = `<span class="time">${time}</span><span class="date">${dateFa}</span><span class="user">${localStorage.getItem(USERNAME_KEY) || DEFAULT_ADMIN_USER}</span>`;
+    el.innerHTML = `<span class="time">${time}</span><span class="date">${dateFa}</span><span class="user">${localStorage.getItem(USERNAME_KEY) || "admin"}</span>`;
   }
   renderClock();
   setInterval(renderClock, 1000);
@@ -172,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const np = qs('#new-pass').value;
     const cp = qs('#confirm-pass').value;
     const msg = qs('#privacy-msg');
-    const saved = localStorage.getItem(PASS_KEY) || DEFAULT_ADMIN_PASS;
+    const saved = localStorage.getItem(PASS_KEY) || '1234';
     if (cur !== saved) {
       msg.textContent = '??? ???? ?????? ???.';
       return;
@@ -555,7 +550,7 @@ function loadUsers(){
   } catch {}
   const seeded = [
     // Main admin account with full name "توسعه دهنده"
-    { id: 'admin', code: '00000', first: '\u062A\u0648\u0633\u0639\u0647', last: '\u062F\u0647\u0646\u062F\u0647', phone: '', password: DEFAULT_ADMIN_PASS, active: true, email: 'admin@example.com', permissions: { tabs: {}, parts: {} } },
+    { id: 'admin', code: '00000', first: '\u062A\u0648\u0633\u0639\u0647', last: '\u062F\u0647\u0646\u062F\u0647', phone: '', password: '', active: true, email: 'admin@example.com', permissions: { tabs: {}, parts: {} } },
     { id: genId(), code: genCode([]), first: 'User', last: '1', phone: '09123456789', password: '1234', active: true, email: '', permissions: { tabs: {}, parts: {} } }
   ];
   saveUsers(seeded);
