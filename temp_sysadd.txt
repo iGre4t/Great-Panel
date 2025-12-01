@@ -1,3 +1,0 @@
-    const sys = { id: genId(), name, prices: null };
-    branch.systems = branch.systems || [];
-    branch.systems.push(sys);

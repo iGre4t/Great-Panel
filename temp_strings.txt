@@ -1,3 +1,0 @@
-  const STR_SAVE = "\u0630\u062E\u06CC\u0631\u0647";
-
-  function ensureStyles(){

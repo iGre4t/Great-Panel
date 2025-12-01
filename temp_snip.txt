@@ -1,7 +1,0 @@
-                <div class="card" style="margin-bottom:12px;">
-                  <h3>قیمت‌های پیشفرض شعبه</h3>
-                  <form id="default-prices-form" class="form grid">
-                    <label class="field">
-                      <span>تک دسته (ریال/ساعت)</span>
-                      <input class="price-input" id="def-1p" type="text" inputmode="numeric" required />
-                    </label>

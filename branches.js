@@ -6,11 +6,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const BRANCHES_KEY = 'gamenet_branches';
   const genId = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
   const loadBranches = () => { try { return JSON.parse(localStorage.getItem(BRANCHES_KEY) || '[]'); } catch { return []; } };
-  const saveBranches = (data) => localStorage.setItem(BRANCHES_KEY, JSON.stringify(data));
+  const saveBranches = (data) => {
+    localStorage.setItem(BRANCHES_KEY, JSON.stringify(data));
+    window.dispatchEvent(new CustomEvent('branches:updated', { detail: data }));
+  };
 
   let branches = loadBranches();
   let currentBranchId = null;
   let currentPeriodId = null;
+
+  if (!branches.length) {
+    branches = [{
+      id: genId(),
+      name: 'شعبه نمونه',
+      systems: [
+        { id: genId(), name: 'سیستم شماره ۱', pricesByPeriod: {} },
+        { id: genId(), name: 'سیستم شماره ۲', pricesByPeriod: {} }
+      ],
+      periods: [{ id: genId(), start: 0, end: DAY_MIN, defaultPrices: { p1: 150000, p2: 200000, p3: 260000, p4: 320000, birthday: 500000, film: 350000 } }]
+    }];
+    saveBranches(branches);
+  }
 
   // Period helpers
   const DAY_MIN = 24*60;

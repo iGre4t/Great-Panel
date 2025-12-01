@@ -1,9 +1,0 @@
-  qs('#default-prices-form')?.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const branch = branches.find(b => b.id === currentBranchId);
-    if (!branch) return;
-    const d = {
-      p1: parsePrice(qs('#def-1p').value),
-      p2: parsePrice(qs('#def-2p').value),
-      p3: parsePrice(qs('#def-3p').value),
-      p4: parsePrice(qs('#def-4p').value),

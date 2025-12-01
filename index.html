@@ -3,42 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>پنل مدیریت</title>
+    <title>نسخه فرانت‌اند پنل مدیریت</title>
     <meta name="color-scheme" content="light" />
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <!-- Login View -->
-    <main id="login-view" class="view hidden">
-      <section class="auth-card">
-        <div class="brand">
-          <div class="logo">GN</div>
-          <h1>پنل مدیریت</h1>
-          <p class="muted">ورود برای ادامه مدیریت</p>
-        </div>
-        <form id="login-form" class="form">
-          <label class="field">
-            <span>نام کاربری</span>
-            <input id="username" type="text" inputmode="text" autocomplete="username" placeholder="مثال: admin" required />
-          </label>
-          <label class="field">
-            <span>رمز عبور</span>
-            <input id="password" type="password" autocomplete="current-password" placeholder="••••" required />
-          </label>
-          <button type="submit" class="btn primary">ورود</button>
-          <p class="hint">نام کاربری: <b>admin</b> — رمز: <b>1234</b></p>
-          <p id="login-error" class="error" role="alert" aria-live="polite"></p>
-        </form>
-      </section>
-    </main>
-
-    <!-- App View -->
-    <div id="app-view" class="view hidden">
+    <div id="app-view" class="view">
       <aside class="sidebar">
         <div class="sidebar-header">
           <div class="logo small">GN</div>
-          <div class="title">مدیریت</div>
+          <div class="title">پنل فرانت‌اند</div>
         </div>
         <nav class="nav">
           <button class="nav-item active" data-tab="home" aria-current="page">
@@ -54,9 +29,6 @@
             <span>تنظیمات</span>
           </button>
         </nav>
-        <div class="sidebar-footer">
-          <button id="logout" class="btn ghost">خروج</button>
-        </div>
       </aside>
 
       <main class="content">
@@ -78,13 +50,13 @@
               <div class="kpi-value" id="kpi-active">0</div>
             </div>
             <div class="card kpi">
-              <div class="kpi-label">تنظیمات</div>
-              <div class="kpi-value">3</div>
+              <div class="kpi-label">تعداد شعب</div>
+              <div class="kpi-value" id="kpi-branches">0</div>
             </div>
           </div>
           <div class="card">
-            <h3>خوش آمدید</h3>
-            <p class="muted">این یک نمونه ساده از پنل مدیریت راست‌چین با طراحی مدرن است.</p>
+            <h3>نسخه فرانت‌اند</h3>
+            <p class="muted">این نسخه تماماً روی مرورگر اجرا می‌شود و هیچ سیستم ورود یا بک‌اندی ندارد.</p>
           </div>
         </section>
 
@@ -109,7 +81,6 @@
           </div>
         </section>
 
-        <!-- Branch Management Tab -->
         <section id="tab-branches" class="tab">
           <div class="sub-layout">
             <aside class="sub-sidebar">
@@ -120,7 +91,6 @@
               </nav>
             </aside>
             <div class="sub-content">
-              <!-- Manage view: add/list branches -->
               <div id="branch-manage-view" class="card">
                 <div class="table-header">
                   <h3>مدیریت شعب</h3>
@@ -148,9 +118,7 @@
                 </div>
               </div>
 
-              <!-- Branch page: default prices + systems list -->
               <div id="branch-page-view" class="hidden">
-                <!-- Default prices of branch -->
                 <div class="card" style="margin-bottom:12px;">
                   <h3>قیمت‌های پیشفرض شعبه</h3>
                   <div class="table-header">
@@ -240,51 +208,38 @@
 
         <section id="tab-settings" class="tab">
           <div class="card">
-            <h3>تنظیمات</h3>
+            <h3>تنظیمات ظاهری</h3>
             <div class="form grid">
               <label class="field full">
                 <span>عنوان سایت</span>
-                <input id="site-title" type="text" value="گم نت سیستمی" />
+                <input id="site-title" type="text" value="پنل مدیریت" />
+              </label>
+              <label class="field">
+                <span>منطقه زمانی ساعت بالای صفحه</span>
+                <select id="timezone-select"></select>
               </label>
             </div>
+            <p class="hint">تغییرات در حافظه مرورگر ذخیره می‌شود و نیازی به بک‌اند ندارد.</p>
           </div>
           <div class="card" style="margin-top:12px;">
-            <h3>حریم خصوصی</h3>
-            <form id="privacy-form" class="form">
-              <label class="field">
-                <span>رمز فعلی</span>
-                <input id="current-pass" type="password" autocomplete="current-password" required />
-              </label>
-              <label class="field">
-                <span>رمز جدید</span>
-                <input id="new-pass" type="password" autocomplete="new-password" minlength="4" required />
-              </label>
-              <label class="field">
-                <span>تکرار رمز جدید</span>
-                <input id="confirm-pass" type="password" autocomplete="new-password" minlength="4" required />
-              </label>
-              <div class="modal-actions">
-                <button type="submit" class="btn primary">ذخیره رمز</button>
-              </div>
-              <p id="privacy-msg" class="hint"></p>
-            </form>
+            <h3>درباره نسخه فرانت‌اند</h3>
+            <p class="muted">این پوشه فقط شامل فایل‌های HTML, CSS و JavaScript سمت کاربر است تا بتوانید ظاهر پنل را جدا از هر سامانه دیگری استفاده کنید.</p>
           </div>
         </section>
       </main>
     </div>
 
-    <!-- Add User Modal -->
     <div id="user-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
       <div class="modal-card">
         <h3 id="user-modal-title">افزودن کاربر</h3>
         <form id="user-form" class="form">
           <label class="field">
-            <span>شماره تلفن (11 رقم)</span>
-            <input id="user-phone" type="text" inputmode="numeric" pattern="^\d{11}$" placeholder="09xxxxxxxxx" required />
+            <span>نام کاربر</span>
+            <input id="user-name" type="text" required />
           </label>
           <label class="field">
-            <span>رمز عبور</span>
-            <input id="user-pass" type="password" minlength="4" required />
+            <span>شماره تلفن (11 رقم)</span>
+            <input id="user-phone" type="text" inputmode="numeric" pattern="^\d{11}$" placeholder="09xxxxxxxxx" required />
           </label>
           <div class="modal-actions">
             <button type="button" class="btn" id="user-cancel">انصراف</button>
@@ -295,7 +250,6 @@
       </div>
     </div>
 
-    <!-- System Settings Modal -->
     <div id="system-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="system-modal-title">
       <div class="modal-card">
         <h3 id="system-modal-title">تنظیمات سیستم</h3>
@@ -343,7 +297,6 @@
       </div>
     </div>
 
-    <!-- Periods Modal -->
     <div id="periods-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="periods-modal-title">
       <div class="modal-card" style="max-width:640px;">
         <h3 id="periods-modal-title">تنظیم بازه‌های زمانی (۲۴ ساعته)</h3>
@@ -362,7 +315,6 @@
       </div>
     </div>
 
-    <!-- Dialog Modal (alerts and confirms) -->
     <div id="dialog-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
       <div class="modal-card" style="max-width:420px;">
         <h3 id="dialog-title">پیام</h3>
@@ -379,4 +331,4 @@
     <script src="branches.js"></script>
     <script src="app.js"></script>
   </body>
-  </html>
+</html>

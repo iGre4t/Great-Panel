@@ -1,3 +1,0 @@
-  qsa('.nav-item').forEach(btn => btn.addEventListener('click', () => setActiveTab(btn.dataset.tab)));
-
-  // Sidebar toggle (compact)
