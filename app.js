@@ -148,7 +148,16 @@ function renderClock(){
   el.innerHTML = `<span class="time">${time}</span><span class="date">${dateFa}</span><span class="user">پنل فرانت‌اند</span>`;
 }
 
-async function showDialog(message, opts = {}){
+function hideAppLoader(){
+  const loader = qs('#app-loader');
+  if (!loader) return;
+  loader.classList.add('is-hidden');
+  const removeLoader = () => loader.remove();
+  loader.addEventListener('transitionend', removeLoader, { once: true });
+  setTimeout(removeLoader, 700);
+}
+
+function showDialog(message, opts = {}){
   const modal = qs('#dialog-modal');
   const titleEl = qs('#dialog-title');
   const textEl = qs('#dialog-text');
@@ -235,7 +244,11 @@ function initSubSidebars(){
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadServerData();
+  try {
+    await loadServerData();
+  } finally {
+    hideAppLoader();
+  }
   setActiveTab('home');
   renderUsers();
   updateKpis();

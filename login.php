@@ -27,11 +27,6 @@ try {
 $errors = [];
 $username = '';
 
-$demoCredentials = [
-  'username' => 'admin',
-  'password' => 'secret123',
-];
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $username = trim($_POST['username'] ?? '');
   $password = trim($_POST['password'] ?? '');
@@ -41,34 +36,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } else {
     if (!$connectionError && $pdo) {
       try {
-        $statement = $pdo->prepare('SELECT `code`, `username`, `fullname`, `password_hash` FROM `users` WHERE `username` = :username LIMIT 1');
+        $statement = $pdo->prepare('SELECT `code`, `username`, `fullname`, `phone`, `email`, `id_number`, `work_id`, `password_hash` FROM `users` WHERE `username` = :username LIMIT 1');
         $statement->execute(['username' => $username]);
         $user = $statement->fetch();
 
         if ($user && password_verify($password, $user['password_hash'])) {
           $_SESSION['authenticated'] = true;
-          $_SESSION['user'] = [
+          $sessionUser = [
             'code' => $user['code'],
             'username' => $user['username'],
             'fullname' => $user['fullname'],
+            'phone' => $user['phone'] ?? '',
+            'email' => $user['email'] ?? '',
+            'id_number' => $user['id_number'] ?? '',
+            'work_id' => $user['work_id'] ?? ''
           ];
+          $sessionUser['display_name'] = buildUserDisplayName($sessionUser);
+          $_SESSION['user'] = $sessionUser;
           header('Location: index.php');
           exit;
         }
       } catch (PDOException $exception) {
         $connectionError = 'Database query failed.';
       }
-    }
-
-    if (!$connectionError && $username === $demoCredentials['username'] && $password === $demoCredentials['password']) {
-      $_SESSION['authenticated'] = true;
-      $_SESSION['user'] = [
-        'code' => 'demo',
-        'username' => $demoCredentials['username'],
-        'fullname' => 'Demo',
-      ];
-      header('Location: index.php');
-      exit;
     }
 
     $errors[] = $connectionError ?? 'Invalid username or password.';
@@ -78,6 +68,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 function escape(string $value): string
 {
   return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function buildUserDisplayName(array $user = []): string
+{
+  foreach (['fullname', 'display_name', 'username'] as $field) {
+    if (!array_key_exists($field, $user)) {
+      continue;
+    }
+    $value = trim((string)$user[$field]);
+    if ($value === '' || $value === '0') {
+      continue;
+    }
+    return $value;
+  }
+  return 'ادمین';
 }
 ?>
 <!doctype html>
@@ -194,14 +199,6 @@ function escape(string $value): string
         background: #c51625;
       }
 
-      .demo-hint {
-        margin-top: 22px;
-        font-size: 0.95rem;
-        color: #6b7280;
-        border-top: 1px solid #f1f1f6;
-        padding-top: 18px;
-        text-align: center;
-      }
     </style>
   </head>
   <body class="login-body">
@@ -229,7 +226,6 @@ function escape(string $value): string
             <input name="password" type="password" placeholder="••••••••" required />
           </label>
           <button type="submit">ورود</button>
-          <p class="demo-hint">نام کاربری: <strong>admin</strong> — رمز: <strong>secret123</strong></p>
         </form>
       </section>
     </main>
