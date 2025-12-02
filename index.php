@@ -1,3 +1,13 @@
+<?php
+session_start();
+
+if (empty($_SESSION['authenticated'])) {
+  header('Location: login.php');
+  exit;
+}
+$sidebarUser = $_SESSION['user']['fullname'] ?? $_SESSION['user']['username'] ?? 'ادمین';
+?>
+
 <!doctype html>
 <html lang="fa" dir="rtl">
   <head>
@@ -7,6 +17,7 @@
     <meta name="color-scheme" content="light" />
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@2.5.0/fonts/remixicon.css" />
   </head>
   <body>
     <div id="app-view" class="view">
@@ -15,20 +26,32 @@
           <div class="logo small">GN</div>
           <div class="title">پنل فرانت‌اند</div>
         </div>
-        <nav class="nav">
+                <nav class="nav">
           <button class="nav-item active" data-tab="home" aria-current="page">
+            <span class="nav-icon ri ri-home-4-line" aria-hidden="true"></span>
             <span>خانه</span>
           </button>
           <button class="nav-item" data-tab="users">
+            <span class="nav-icon ri ri-user-3-line" aria-hidden="true"></span>
             <span>کاربران</span>
           </button>
-          <button class="nav-item" data-tab="branches">
-            <span>مدیریت شعب</span>
+          <button class="nav-item" data-tab="devsettings">
+            <span class="nav-icon ri ri-terminal-box-line" aria-hidden="true"></span>
+            <span>تنظیمات توسعه دهنده</span>
           </button>
           <button class="nav-item" data-tab="settings">
-            <span>تنظیمات</span>
+            <span class="nav-icon ri ri-user-settings-line" aria-hidden="true"></span>
+            <span>تنظیمات حساب کاربری</span>
           </button>
         </nav>
+
+        <div class="sidebar-footer">
+          <span class="footer-title"><?= htmlspecialchars($sidebarUser, ENT_QUOTES, 'UTF-8') ?></span>
+          <a class="nav-item logout-nav" href="logout.php" aria-label="خروج از سیستم">
+            <span class="nav-icon ri ri-logout-box-line" aria-hidden="true"></span>
+            <span>خروج از سیستم</span>
+          </a>
+        </div>
       </aside>
 
       <main class="content">
@@ -81,151 +104,25 @@
           </div>
         </section>
 
-        <section id="tab-branches" class="tab">
-          <div class="sub-layout">
+        <section id="tab-devsettings" class="tab">
+          <div class="sub-layout" data-sub-layout>
             <aside class="sub-sidebar">
-              <div class="sub-header">مدیریت شعب</div>
-              <nav id="branch-subnav" class="sub-nav">
-                <button class="sub-item active" data-view="manage">عمومی</button>
-                <div id="branch-items"></div>
-              </nav>
+              <div class="sub-header">تنظیمات توسعه دهنده</div>
+              <div class="sub-nav">
+                <button type="button" class="sub-item active" data-pane="panel-settings">
+                  تنظیمات پنل
+                </button>
+              </div>
             </aside>
             <div class="sub-content">
-              <div id="branch-manage-view" class="card">
-                <div class="table-header">
-                  <h3>مدیریت شعب</h3>
-                </div>
-                <form id="add-branch-form" class="form grid">
-                  <label class="field">
-                    <span>نام شعبه</span>
-                    <input type="text" id="branch-name" placeholder="مثلاً: شعبه مرکزی" required />
-                  </label>
-                  <div class="field">
-                    <span>&nbsp;</span>
-                    <button type="submit" class="btn primary">افزودن شعبه</button>
-                  </div>
-                </form>
-                <div class="table-wrapper" style="margin-top:12px;">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>نام شعبه</th>
-                        <th>اقدامات</th>
-                      </tr>
-                    </thead>
-                    <tbody id="branches-body"></tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div id="branch-page-view" class="hidden">
-                <div class="card" style="margin-bottom:12px;">
-                  <h3>قیمت‌های پیشفرض شعبه</h3>
-                  <div class="table-header">
-                    <div></div>
-                    <div class="period-toolbar">
-                      <label class="field" style="margin:0;">
-                        <span></span>
-                        <select id="period-select"></select>
-                      </label>
-                      <button id="manage-periods" type="button" class="btn">تنظیم بازه‌های زمانی</button>
-                    </div>
-                  </div>
-                  <form id="default-prices-form" class="form grid">
-                    <label class="field">
-                      <span>تک دسته (ریال/ساعت)</span>
-                      <input class="price-input" id="def-1p" type="text" inputmode="numeric" required />
-                    </label>
-                    <label class="field">
-                      <span>دو دسته (ریال/ساعت)</span>
-                      <input class="price-input" id="def-2p" type="text" inputmode="numeric" required />
-                    </label>
-                    <label class="field">
-                      <span>سه دسته (ریال/ساعت)</span>
-                      <input class="price-input" id="def-3p" type="text" inputmode="numeric" required />
-                    </label>
-                    <label class="field">
-                      <span>چهار دسته (ریال/ساعت)</span>
-                      <input class="price-input" id="def-4p" type="text" inputmode="numeric" required />
-                    </label>
-                    <label class="field">
-                      <span>تولد (ریال)</span>
-                      <input class="price-input" id="def-birthday" type="text" inputmode="numeric" required />
-                    </label>
-                    <label class="field">
-                      <span>فیلم (ریال)</span>
-                      <input class="price-input" id="def-film" type="text" inputmode="numeric" required />
-                    </label>
-                    <div class="field full">
-                      <button type="submit" class="btn primary">ذخیره قیمت‌های پیشفرض</button>
-                    </div>
-                    <p id="default-prices-msg" class="hint full"></p>
-                  </form>
-                </div>
-
-                <div class="card">
-                  <div class="table-header">
-                    <h3 id="branch-page-title">شعبه</h3>
-                    <form id="add-system-form" class="form" style="grid-auto-flow: column; align-items:center; grid-auto-columns: max-content; gap:8px;">
-                      <input id="system-name-input" type="text" placeholder="نام سیستم" required />
-                      <button type="submit" class="btn primary">افزودن سیستم</button>
-                    </form>
-                  </div>
-
-                  <div id="bulk-bar" class="bulk-bar">
-                    <div class="bulk-left">
-                      <label class="chk"><input type="checkbox" id="select-all" /> انتخاب همه</label>
-                    </div>
-                    <form id="bulk-form" class="form bulk-form">
-                      <input class="price-input" id="bulk-1p" type="text" inputmode="numeric" placeholder="تک دسته" required />
-                      <input class="price-input" id="bulk-2p" type="text" inputmode="numeric" placeholder="دو دسته" required />
-                      <input class="price-input" id="bulk-3p" type="text" inputmode="numeric" placeholder="سه دسته" required />
-                      <input class="price-input" id="bulk-4p" type="text" inputmode="numeric" placeholder="چهار دسته" required />
-                      <input class="price-input" id="bulk-birthday" type="text" inputmode="numeric" placeholder="تولد" required />
-                      <input class="price-input" id="bulk-film" type="text" inputmode="numeric" placeholder="فیلم" required />
-                      <button type="submit" class="btn">اعمال تغییرات دسته جمعی</button>
-                    </form>
-                  </div>
-
-                  <div class="table-wrapper">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th style="width:42px"><input type="checkbox" id="header-select" /></th>
-                          <th>نام سیستم</th>
-                          <th>وضعیت قیمت</th>
-                          <th>تنظیمات</th>
-                        </tr>
-                      </thead>
-                      <tbody id="systems-body"></tbody>
-                    </table>
-                  </div>
-                </div>
+              <div class="sub-pane active" data-pane="panel-settings">
+                <?php include __DIR__ . '/dev-settings.php'; ?>
               </div>
             </div>
           </div>
         </section>
 
-        <section id="tab-settings" class="tab">
-          <div class="card">
-            <h3>تنظیمات ظاهری</h3>
-            <div class="form grid">
-              <label class="field full">
-                <span>عنوان سایت</span>
-                <input id="site-title" type="text" value="پنل مدیریت" />
-              </label>
-              <label class="field">
-                <span>منطقه زمانی ساعت بالای صفحه</span>
-                <select id="timezone-select"></select>
-              </label>
-            </div>
-            <p class="hint">تغییرات در حافظه مرورگر ذخیره می‌شود و نیازی به بک‌اند ندارد.</p>
-          </div>
-          <div class="card" style="margin-top:12px;">
-            <h3>درباره نسخه فرانت‌اند</h3>
-            <p class="muted">این پوشه فقط شامل فایل‌های HTML, CSS و JavaScript سمت کاربر است تا بتوانید ظاهر پنل را جدا از هر سامانه دیگری استفاده کنید.</p>
-          </div>
-        </section>
+        <section id="tab-settings" class="tab"></section>
       </main>
     </div>
 
@@ -328,7 +225,6 @@
       </div>
     </div>
 
-    <script src="branches.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

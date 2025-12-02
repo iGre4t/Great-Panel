@@ -1,10 +1,96 @@
-const USER_DB = [
-  { name: "ادمین پیشفرض", phone: "09123456789", active: true },
-  { name: "کاربر آزمایشی", phone: "09350001122", active: false }
+const DEFAULT_USERS = [
+  { name: "Demo User 1", phone: "09123456789", active: true },
+  { name: "Demo User 2", phone: "09350001122", active: false }
 ];
+let USER_DB = [...DEFAULT_USERS];
 
 const TITLE_KEY = "frontend_panel_title";
 const TIMEZONE_KEY = "frontend_panel_timezone";
+const API_ENDPOINT = "./api/data.php";
+const PANEL_TITLE_KEY = "frontend_panel_name";
+const PANEL_TITLE_DEFAULT = "پنل فرانت اند";
+const DEFAULT_SETTINGS = {
+  title: "Great Panel",
+  timezone: "Asia/Tehran",
+  panelName: PANEL_TITLE_DEFAULT
+};
+let SERVER_SETTINGS = { ...DEFAULT_SETTINGS };
+let SERVER_BRANCHES = [];
+let SERVER_DATA_LOADED = false;
+
+async function loadServerData() {
+  try {
+    const response = await fetch(API_ENDPOINT);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch backend data (${response.status})`);
+    }
+    const payload = await response.json();
+    if (Array.isArray(payload.users) && payload.users.length) {
+      USER_DB = payload.users.map(u => ({
+        name: typeof u.name === "string" ? u.name : "",
+        phone: typeof u.phone === "string" ? u.phone : "",
+        active: Boolean(u.active)
+      }));
+    } else {
+      USER_DB = [...DEFAULT_USERS];
+    }
+    SERVER_BRANCHES = Array.isArray(payload.branches) ? payload.branches : [];
+    if (payload.settings && typeof payload.settings === "object") {
+      SERVER_SETTINGS = { ...SERVER_SETTINGS, ...payload.settings };
+    }
+    applyServerSettings();
+    SERVER_DATA_LOADED = true;
+  } catch (err) {
+    console.warn("Failed to load data from backend:", err);
+    USER_DB = [...DEFAULT_USERS];
+  }
+}
+
+function applyServerSettings() {
+  if (SERVER_SETTINGS.title && !localStorage.getItem(TITLE_KEY)) {
+    localStorage.setItem(TITLE_KEY, SERVER_SETTINGS.title);
+  }
+  if (SERVER_SETTINGS.timezone && !localStorage.getItem(TIMEZONE_KEY)) {
+    localStorage.setItem(TIMEZONE_KEY, SERVER_SETTINGS.timezone);
+  }
+}
+
+function applyPanelTitle(value, persist = false) {
+  const name = value ?? localStorage.getItem(PANEL_TITLE_KEY) ?? PANEL_TITLE_DEFAULT;
+  const finalTitle = typeof name === 'string' && name.length ? name : PANEL_TITLE_DEFAULT;
+  if (persist && typeof finalTitle === "string") {
+    localStorage.setItem(PANEL_TITLE_KEY, finalTitle);
+  }
+  const el = qs('.sidebar .title');
+  if (el) el.textContent = finalTitle;
+  document.title = finalTitle;
+  localStorage.setItem(TITLE_KEY, finalTitle);
+}
+
+async function syncUserToBackend(user) {
+  try {
+    await fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "add_user", user })
+    });
+  } catch (err) {
+    console.warn("Failed to sync user to backend:", err);
+  }
+}
+
+async function syncSettings(payload) {
+  try {
+    await fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "save_settings", settings: payload })
+    });
+  } catch (err) {
+    console.warn("Failed to sync settings to backend:", err);
+  }
+}
+
 
 function qs(sel, root = document) { return root.querySelector(sel); }
 function qsa(sel, root = document) { return [...root.querySelectorAll(sel)]; }
@@ -12,7 +98,7 @@ function qsa(sel, root = document) { return [...root.querySelectorAll(sel)]; }
 function setActiveTab(tab) {
   qsa('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   qsa('.tab').forEach(t => t.classList.toggle('active', t.id === `tab-${tab}`));
-  const titles = { home: 'خانه', users: 'کاربران', branches: 'مدیریت شعب', settings: 'تنظیمات' };
+  const titles = { home: 'خانه', users: 'کاربران', devsettings: 'تنظیمات توسعه دهنده', settings: 'تنظیمات' };
   const el = qs('#page-title');
   if (el) el.textContent = titles[tab] || '';
 }
@@ -29,6 +115,9 @@ function renderUsers() {
 }
 
 function loadBranchesCount(){
+  if (SERVER_BRANCHES.length) {
+    return SERVER_BRANCHES.length;
+  }
   try {
     const branches = JSON.parse(localStorage.getItem('gamenet_branches') || '[]');
     return Array.isArray(branches) ? branches.length : 0;
@@ -40,9 +129,14 @@ function loadBranchesCount(){
 function updateKpis() {
   const total = USER_DB.length;
   const active = USER_DB.filter(u => u.active).length;
-  qs('#kpi-users')?.textContent = total;
-  qs('#kpi-active')?.textContent = active;
-  qs('#kpi-branches')?.textContent = loadBranchesCount();
+  const branches = loadBranchesCount();
+  const setKpiValue = (selector, value) => {
+    const el = qs(selector);
+    if (el) el.textContent = value;
+  };
+  setKpiValue('#kpi-users', total);
+  setKpiValue('#kpi-active', active);
+  setKpiValue('#kpi-branches', branches);
 }
 
 function renderClock(){
@@ -120,18 +214,43 @@ function populateTimezoneSelect(){
     if (z === storedTz) opt.selected = true;
     select.appendChild(opt);
   });
-  select.addEventListener('change', () => {
-    localStorage.setItem(TIMEZONE_KEY, select.value);
-    renderClock();
+}
+
+function initSubSidebars(){
+  qsa('.sub-layout').forEach(layout => {
+    const nav = layout.querySelector('.sub-nav');
+    if (!nav) return;
+    nav.addEventListener('click', (event) => {
+      const trigger = event.target instanceof Element ? event.target.closest('.sub-item[data-pane]') : null;
+      if (!trigger) return;
+      event.preventDefault();
+      const targetPane = trigger.dataset.pane;
+      if (!targetPane) return;
+      nav.querySelectorAll('.sub-item').forEach(item => item.classList.toggle('active', item === trigger));
+      layout.querySelectorAll('.sub-pane').forEach(pane => {
+        pane.classList.toggle('active', pane.dataset.pane === targetPane);
+      });
+    });
   });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadServerData();
   setActiveTab('home');
   renderUsers();
   updateKpis();
 
-  qsa('.nav-item').forEach(btn => btn.addEventListener('click', () => setActiveTab(btn.dataset.tab)));
+  const navContainer = qs('.nav');
+  navContainer?.addEventListener('click', (event) => {
+    const target = event.target;
+    const btn = target && target instanceof Element ? target.closest('.nav-item[data-tab]') : null;
+    if (!btn) return;
+    event.preventDefault();
+    const tab = btn.dataset.tab;
+    if (tab) {
+      setActiveTab(tab);
+    }
+  });
 
   renderClock();
   setInterval(renderClock, 1000);
@@ -162,29 +281,44 @@ document.addEventListener('DOMContentLoaded', () => {
     const msg = qs('#user-form-msg');
     if (!name){ msg.textContent = 'نام را وارد کنید.'; return; }
     if (!/^\d{11}$/.test(phone)) { msg.textContent = 'شماره تلفن باید ۱۱ رقم باشد.'; return; }
-    USER_DB.push({ name, phone, active: true });
+    const newUser = { name, phone, active: true };
+    USER_DB.push(newUser);
     renderUsers();
     updateKpis();
     closeUserModal();
+    syncUserToBackend(newUser);
   });
 
-  const savedTitle = localStorage.getItem(TITLE_KEY) || 'پنل مدیریت';
-  qs('#site-title')?.addEventListener('input', (e) => {
-    const val = e.target.value;
-    localStorage.setItem(TITLE_KEY, val);
-    document.title = val || 'پنل مدیریت';
-    const sidebarTitle = qs('.sidebar .title');
-    if (sidebarTitle) sidebarTitle.textContent = val || 'پنل فرانت‌اند';
-  });
-  const titleInput = qs('#site-title');
-  if (titleInput){
-    titleInput.value = savedTitle;
-    document.title = savedTitle;
-    const sidebarTitle = qs('.sidebar .title');
-    if (sidebarTitle) sidebarTitle.textContent = savedTitle;
+  const panelInput = qs('#dev-panel-name');
+  const panelSaveBtn = qs('#save-panel-settings');
+  const storedPanel = localStorage.getItem(PANEL_TITLE_KEY);
+  const serverPanel = SERVER_DATA_LOADED ? SERVER_SETTINGS.panelName : null;
+  const initialPanel = serverPanel ?? storedPanel ?? PANEL_TITLE_DEFAULT;
+  if (panelInput) {
+    panelInput.value = initialPanel;
   }
+  applyPanelTitle(initialPanel, true);
+  panelSaveBtn?.addEventListener('click', () => {
+    const value = (panelInput?.value ?? '').trim();
+    const panelName = value || PANEL_TITLE_DEFAULT;
+    applyPanelTitle(panelName, true);
+    SERVER_SETTINGS.panelName = panelName;
+    syncSettings({ panelName });
+  });
 
   populateTimezoneSelect();
+  const generalSaveBtn = qs('#save-general-settings');
+  const timezoneSelect = qs('#timezone-select');
+  generalSaveBtn?.addEventListener('click', () => {
+    const timezoneValue = timezoneSelect?.value || DEFAULT_SETTINGS.timezone;
+    if (timezoneSelect) {
+      localStorage.setItem(TIMEZONE_KEY, timezoneValue);
+    }
+    SERVER_SETTINGS.timezone = timezoneValue;
+    renderClock();
+    syncSettings({ timezone: timezoneValue });
+  });
+  initSubSidebars();
 
   window.addEventListener('branches:updated', updateKpis);
   window.addEventListener('storage', updateKpis);

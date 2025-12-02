@@ -1,0 +1,47 @@
+{
+    "users": [
+        {
+            "name": "Demo User 1",
+            "phone": "09123456789",
+            "active": true
+        },
+        {
+            "name": "Demo User 2",
+            "phone": "09350001122",
+            "active": false
+        }
+    ],
+    "branches": [
+        {
+            "id": "branch-main",
+            "name": "Main Branch",
+            "systems": [
+                {
+                    "id": "system-1",
+                    "name": "Gaming Station",
+                    "pricesByPeriod": []
+                }
+            ],
+            "periods": [
+                {
+                    "id": "default",
+                    "start": 0,
+                    "end": 1440,
+                    "defaultPrices": {
+                        "p1": 150000,
+                        "p2": 200000,
+                        "p3": 260000,
+                        "p4": 320000,
+                        "birthday": 500000,
+                        "film": 350000
+                    }
+                }
+            ]
+        }
+    ],
+    "settings": {
+        "title": "Great Panel2",
+        "timezone": "Asia\/Tehran",
+        "panelName": "منابع انسانی همراه اول"
+    }
+}
