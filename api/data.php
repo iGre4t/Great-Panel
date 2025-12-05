@@ -7,6 +7,7 @@ require_once __DIR__ . '/lib/common.php';
 require_once __DIR__ . '/lib/users.php';
 
 header('Content-Type: application/json; charset=UTF-8');
+// This single handler responds with the normalized payload used by both the users and gallery tabs.
 
 $configFile = __DIR__ . '/config.php';
 $config = loadConfig($configFile);
@@ -51,6 +52,113 @@ $defaultData = [
     ]
 ];
 
+function parseUserCodeValue(string $value): int
+{
+    $digits = preg_replace('/\D+/', '', $value);
+    return $digits === '' ? 0 : (int)$digits;
+}
+
+function generateNextUserCode(array $data): string
+{
+    $max = 0;
+    $users = is_array($data['users'] ?? null) ? $data['users'] : [];
+    foreach ($users as $user) {
+        if (!is_array($user)) {
+            continue;
+        }
+        $current = parseUserCodeValue((string)($user['code'] ?? ''));
+        if ($current > $max) {
+            $max = $current;
+        }
+    }
+    return str_pad((string)($max + 1), 6, '0', STR_PAD_LEFT);
+}
+
+function isUserCodeTaken(string $code, array $data): bool
+{
+    foreach ((is_array($data['users'] ?? null) ? $data['users'] : []) as $user) {
+        if (!is_array($user)) {
+            continue;
+        }
+        if (($user['code'] ?? '') === $code) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function isValidEmail(string $value): bool
+{
+    if ($value === '') {
+        return true;
+    }
+    return filter_var($value, FILTER_VALIDATE_EMAIL) !== false;
+}
+
+function normalizeDigits(string $value): string
+{
+    return preg_replace('/\D+/', '', $value) ?? '';
+}
+
+function isPhoneTaken(string $phone, array $data, string $excludeCode = ''): bool
+{
+    $target = normalizeDigits($phone);
+    if ($target === '') {
+        return false;
+    }
+    foreach ((is_array($data['users'] ?? null) ? $data['users'] : []) as $user) {
+        if (!is_array($user)) {
+            continue;
+        }
+        if ($excludeCode !== '' && (string)($user['code'] ?? '') === $excludeCode) {
+            continue;
+        }
+        if (normalizeDigits((string)($user['phone'] ?? '')) === $target) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function findUserIndexByCode(array $data, string $code): int
+{
+    $target = trim((string)$code);
+    if ($target === '') {
+        return -1;
+    }
+    $users = is_array($data['users'] ?? null) ? $data['users'] : [];
+    foreach ($users as $index => $user) {
+        if (!is_array($user)) {
+            continue;
+        }
+        if (trim((string)($user['code'] ?? '')) === $target) {
+            return $index;
+        }
+    }
+    return -1;
+}
+
+function updateUserInStore(array &$data, string $code, array $values): bool
+{
+    $index = findUserIndexByCode($data, $code);
+    if ($index < 0) {
+        return false;
+    }
+    $current = is_array($data['users'][$index] ?? null) ? $data['users'][$index] : [];
+    $data['users'][$index] = array_merge($current, $values);
+    return true;
+}
+
+function removeUserFromStore(array &$data, string $code): bool
+{
+    $index = findUserIndexByCode($data, $code);
+    if ($index < 0) {
+        return false;
+    }
+    array_splice($data['users'], $index, 1);
+    return true;
+}
+
 $data = normalizeData(loadJsonData($dataFile, $defaultData), $defaultData);
 
 $dbData = null;
@@ -69,7 +177,14 @@ $currentUserCode = $isAuthenticated ? trim((string)($_SESSION['user']['code'] ??
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'POST') {
-    $payload = json_decode(file_get_contents('php://input') ?: 'null', true) ?? [];
+    $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+    $isMultipart = stripos($contentType, 'multipart/form-data') !== false;
+    $payload = $isMultipart
+        ? ($_POST ?? [])
+        : (json_decode(file_get_contents('php://input') ?: 'null', true) ?? []);
+    if (!is_array($payload)) {
+        $payload = [];
+    }
     $action = $payload['action'] ?? '';
     $postResponse = ['status' => 'ok'];
 
@@ -81,18 +196,135 @@ if ($method === 'POST') {
         handleUserUpdatePassword($payload, $pdo, $currentUserCode);
     }
 
+    // User tab CRUD actions (add, update, delete) land here so the panel can persist the JSON store and optional DB.
     if ($action === 'add_user' && !empty($payload['user'])) {
         $user = $payload['user'];
-        $name = trim((string)($user['name'] ?? ''));
-        if ($name !== '') {
-            $phone = trim((string)($user['phone'] ?? ''));
-            $data['users'][] = [
-                'name' => $name,
-                'phone' => $phone,
-                'active' => !empty($user['active']),
-                'createdAt' => time()
-            ];
+        $username = trim((string)($user['username'] ?? ''));
+        $fullname = trim((string)($user['fullname'] ?? $user['name'] ?? ''));
+        if ($fullname === '') {
+            sendJsonResponse(['status' => 'error', 'message' => 'Full name is required.']);
         }
+        if ($username === '') {
+            sendJsonResponse(['status' => 'error', 'message' => 'Username is required.']);
+        }
+        $phone = normalizeDigits(trim((string)($user['phone'] ?? '')));
+        if (strlen($phone) !== 11) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Phone number must be 11 digits.']);
+        }
+        if (isPhoneTaken($phone, $data)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Phone number already exists.']);
+        }
+        if ($pdo && isUsernameTaken($pdo, $username)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Username already exists.']);
+        }
+        if ($pdo && isPhoneTakenInTable($pdo, $phone)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Phone number already exists.']);
+        }
+        $workId = trim((string)($user['work_id'] ?? ''));
+        $idNumber = normalizeDigits(trim((string)($user['id_number'] ?? '')));
+        $email = trim((string)($user['email'] ?? ''));
+        if (!isValidEmail($email)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Please provide a valid email address.']);
+        }
+        $code = trim((string)($user['code'] ?? ''));
+        if ($code === '' || isUserCodeTaken($code, $data)) {
+            $code = generateNextUserCode($data);
+        }
+        $newUser = [
+            'code' => $code,
+            'username' => $username,
+            'name' => $fullname,
+            'phone' => $phone,
+            'work_id' => $workId,
+            'id_number' => $idNumber,
+            'email' => $email,
+            'active' => !empty($user['active']),
+            'createdAt' => time()
+        ];
+        if ($pdo && !insertUserRecord($pdo, [
+            'code' => $newUser['code'],
+            'username' => $newUser['username'],
+            'name' => $newUser['name'],
+            'phone' => $newUser['phone'],
+            'work_id' => $newUser['work_id'],
+            'id_number' => $newUser['id_number'],
+            'email' => $email
+        ])) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Failed to insert user into the database.']);
+        }
+        $data['users'][] = $newUser;
+        $postResponse['message'] = 'User saved successfully.';
+    } elseif ($action === 'update_user' && !empty($payload['user'])) {
+        // Handles edits submitted from the user modal while keeping validations centralized.
+        $user = $payload['user'];
+        $code = trim((string)($user['code'] ?? ''));
+        if ($code === '') {
+            sendJsonResponse(['status' => 'error', 'message' => 'User code is required.']);
+        }
+        $username = trim((string)($user['username'] ?? ''));
+        $fullname = trim((string)($user['fullname'] ?? $user['name'] ?? ''));
+        if ($username === '' || $fullname === '') {
+            sendJsonResponse(['status' => 'error', 'message' => 'Username and full name are required.']);
+        }
+        $phone = normalizeDigits(trim((string)($user['phone'] ?? '')));
+        if (strlen($phone) !== 11) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Phone number must be 11 digits.']);
+        }
+        if (isPhoneTaken($phone, $data, $code)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Phone number already exists.']);
+        }
+        $workId = trim((string)($user['work_id'] ?? ''));
+        $idNumber = normalizeDigits(trim((string)($user['id_number'] ?? '')));
+        $email = trim((string)($user['email'] ?? ''));
+        if (!isValidEmail($email)) {
+            if ($email !== '') {
+                sendJsonResponse(['status' => 'error', 'message' => 'Please provide a valid email address.']);
+            }
+        }
+        if ($pdo && isUsernameTaken($pdo, $username, $code)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Username already exists.']);
+        }
+        if ($pdo && isPhoneTakenInTable($pdo, $phone, $code)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Phone number already exists.']);
+        }
+        if ($pdo) {
+            $updateFields = [
+                'username' => $username,
+                'fullname' => $fullname,
+                'phone' => $phone,
+                'work_id' => $workId,
+                'id_number' => $idNumber,
+                'email' => $email
+            ];
+            if (!updateUserByCode($pdo, $code, $updateFields)) {
+                sendJsonResponse(['status' => 'error', 'message' => 'Failed to update user information.']);
+            }
+        }
+        if (!updateUserInStore($data, $code, [
+            'username' => $username,
+            'name' => $fullname,
+            'phone' => $phone,
+            'work_id' => $workId,
+            'id_number' => $idNumber,
+            'email' => $email,
+            'active' => !empty($user['active'])
+        ])) {
+            sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
+        }
+        $postResponse['message'] = 'User updated successfully.';
+    } elseif ($action === 'delete_user' && !empty($payload['code'])) {
+        // Confirmed deletions come from the users tab list after hitting the primary Delete button.
+        $code = trim((string)($payload['code'] ?? ''));
+        if ($code === '') {
+            sendJsonResponse(['status' => 'error', 'message' => 'User code is required.']);
+        }
+        if ($pdo && !deleteUserByCode($pdo, $code)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Failed to delete the user.']);
+        }
+        if (!removeUserFromStore($data, $code)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
+        }
+        $postResponse['message'] = 'User deleted successfully.';
     } elseif ($action === 'save_settings' && !empty($payload['settings'])) {
         $settings = $payload['settings'];
         foreach (['title', 'timezone', 'panelName'] as $field) {
@@ -107,57 +339,97 @@ if ($method === 'POST') {
         }
     } elseif ($action === 'add_gallery_category') {
         if (!$pdo) {
-            sendJsonResponse(['status' => 'error', 'message' => 'ارتباط با پایگاه‌داده برقرار نیست.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
         }
         $name = trim((string)($payload['name'] ?? ''));
         if ($name === '') {
-            sendJsonResponse(['status' => 'error', 'message' => 'نام دسته بندی معتبر نیست.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'Invalid category name.']);
         }
         $category = createGalleryCategory($pdo, $name);
         if (empty($category['id'])) {
-            sendJsonResponse(['status' => 'error', 'message' => 'خطا در ثبت دسته بندی.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'Failed to save the category.']);
         }
-        $postResponse['message'] = 'دسته بندی جدید ذخیره شد.';
+        $postResponse['message'] = 'Category saved successfully.';
     } elseif ($action === 'update_gallery_category') {
         if (!$pdo) {
-            sendJsonResponse(['status' => 'error', 'message' => 'ارتباط با پایگاه‌داده برقرار نیست.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
         }
         $categoryId = (int)($payload['id'] ?? 0);
         $name = trim((string)($payload['name'] ?? ''));
         if ($categoryId <= 0 || $name === '') {
-            sendJsonResponse(['status' => 'error', 'message' => 'داده‌های دسته بندی نامعتبر است.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'Category data is invalid.']);
         }
         $result = updateGalleryCategory($pdo, $categoryId, $name);
         if ($result['status'] !== 'ok') {
             sendJsonResponse($result);
         }
-        $postResponse['message'] = $result['message'] ?? 'دسته بندی بروز شد.';
+        $postResponse['message'] = $result['message'] ?? 'Category updated successfully.';
     } elseif ($action === 'delete_gallery_category') {
         if (!$pdo) {
-            sendJsonResponse(['status' => 'error', 'message' => 'ارتباط با پایگاه‌داده برقرار نیست.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
         }
         $categoryId = (int)($payload['id'] ?? 0);
         if ($categoryId <= 0) {
-            sendJsonResponse(['status' => 'error', 'message' => 'دسته بندی انتخاب نشده است.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'No category selected.']);
         }
         $result = deleteGalleryCategory($pdo, $categoryId);
         if ($result['status'] !== 'ok') {
             sendJsonResponse($result);
         }
-        $postResponse['message'] = $result['message'] ?? 'دسته بندی حذف شد.';
+        $postResponse['message'] = $result['message'] ?? 'Category deleted successfully.';
+    } elseif ($action === 'update_gallery_photo') {
+        if (!$pdo) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
+        }
+        $photoId = (int)($payload['photo_id'] ?? 0);
+        $title = trim((string)($payload['title'] ?? ''));
+        $alt = trim((string)($payload['alt_text'] ?? ''));
+        $categoryId = (int)($payload['category_id'] ?? 0);
+        $result = updateGalleryPhoto($pdo, $photoId, $title, $alt, $categoryId);
+        if ($result['status'] !== 'ok') {
+            sendJsonResponse($result);
+        }
+        $postResponse['message'] = $result['message'] ?? 'Photo details saved successfully.';
+    } elseif ($action === 'replace_gallery_photo') {
+        if (!$pdo) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
+        }
+        $photoId = (int)($payload['photo_id'] ?? 0);
+        $file = $_FILES['photo'] ?? null;
+        if (!is_array($file)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'No image file was uploaded.']);
+        }
+        $result = replaceGalleryPhoto($pdo, $photoId, $file);
+        if ($result['status'] !== 'ok') {
+            sendJsonResponse($result);
+        }
+        $postResponse['message'] = $result['message'] ?? 'Photo replaced successfully.';
+    } elseif ($action === 'delete_gallery_photo') {
+        if (!$pdo) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
+        }
+        $photoId = (int)($payload['photo_id'] ?? 0);
+        if ($photoId <= 0) {
+            sendJsonResponse(['status' => 'error', 'message' => 'No photo selected.']);
+        }
+        $result = deleteGalleryPhoto($pdo, $photoId);
+        if ($result['status'] !== 'ok') {
+            sendJsonResponse($result);
+        }
+        $postResponse['message'] = $result['message'] ?? 'Photo deleted successfully.';
     } elseif ($action === 'add_gallery_photo') {
         if (!$pdo) {
-            sendJsonResponse(['status' => 'error', 'message' => 'ارتباط با پایگاه‌داده برقرار نیست.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
         }
         $file = $_FILES['photo'] ?? null;
         if (!is_array($file)) {
-            sendJsonResponse(['status' => 'error', 'message' => 'فایل تصویر ارسال نشده است.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'No image file was uploaded.']);
         }
         $photoResult = saveGalleryPhoto($pdo, $payload, $file);
         if ($photoResult['status'] !== 'ok') {
             sendJsonResponse($photoResult);
         }
-        $postResponse['message'] = 'تصویر با موفقیت بارگذاری شد.';
+        $postResponse['message'] = 'Image uploaded successfully.';
     }
 
     $data = normalizeData($data, $defaultData);
@@ -174,6 +446,7 @@ $galleryPhotos = $pdo ? loadGalleryPhotos($pdo) : [];
 
 $data['galleryCategories'] = $galleryCategories;
 $data['galleryPhotos'] = $galleryPhotos;
+$data['databaseConnected'] = $pdo !== null;
 
 echo json_encode($data);
 exit;
@@ -298,64 +571,67 @@ function loadGalleryPhotos(PDO $pdo): array
 function handleUserUpdatePersonal(array $payload, ?PDO $pdo, string $userCode): void
 {
     if (!$pdo) {
-        sendJsonResponse(['status' => 'error', 'message' => 'اتصال به پایگاه داده برقرار نیست.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
     }
     if ($userCode === '') {
-        sendJsonResponse(['status' => 'error', 'message' => 'برای انجام این عملیات باید وارد شوید.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'You must be logged in to perform this action.']);
     }
     $fullname = trim((string)($payload['fullname'] ?? ''));
     if ($fullname === '') {
-        sendJsonResponse(['status' => 'error', 'message' => 'نام کامل نمی‌تواند خالی باشد.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'Full name cannot be empty.']);
     }
     if (!updateUserByCode($pdo, $userCode, ['fullname' => $fullname])) {
-        sendJsonResponse(['status' => 'error', 'message' => 'خطایی هنگام ثبت نام کامل رخ داد.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'An error occurred while saving the full name.']);
     }
     $user = loadUserByCode($pdo, $userCode);
     if (!$user) {
-        sendJsonResponse(['status' => 'error', 'message' => 'کاربر یافت نشد.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
     }
     refreshSessionUser($user);
     sendJsonResponse([
         'status' => 'ok',
-        'message' => 'نام کامل با موفقیت به‌روزرسانی شد.',
+        'message' => 'Full name updated successfully.',
         'user' => normalizeUserForResponse($user)
     ]);
 }
 
+// Handles the stable Account Settings tab action. Called from update_user_account, it enforces username/phone/email validation,
+// persists the changes through the usual user table helpers, and refreshes the session so the frontend always renders the
+// latest account information.
 function handleUserUpdateAccount(array $payload, ?PDO $pdo, string $userCode): void
 {
     if (!$pdo) {
-        sendJsonResponse(['status' => 'error', 'message' => 'اتصال به پایگاه داده برقرار نیست.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
     }
     if ($userCode === '') {
-        sendJsonResponse(['status' => 'error', 'message' => 'برای انجام این عملیات باید وارد شوید.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'You must be logged in to perform this action.']);
     }
     $username = trim((string)($payload['username'] ?? ''));
     $phone = trim((string)($payload['phone'] ?? ''));
     $email = trim((string)($payload['email'] ?? ''));
     if ($username === '') {
-        sendJsonResponse(['status' => 'error', 'message' => 'نام کاربری نمی‌تواند خالی باشد.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'Username cannot be empty.']);
     }
     if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        sendJsonResponse(['status' => 'error', 'message' => 'ایمیل معتبر وارد کنید.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'Please provide a valid email address.']);
     }
     if ($phone !== '' && !preg_match('/^\d{11}$/', $phone)) {
-        sendJsonResponse(['status' => 'error', 'message' => 'شماره تلفن باید ۱۱ رقم باشد.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'Phone number must be 11 digits.']);
     }
     if (isUsernameTaken($pdo, $username, $userCode)) {
-        sendJsonResponse(['status' => 'error', 'message' => 'نام کاربری انتخاب‌شده قبلاً استفاده شده است.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'The chosen username is already in use.']);
     }
     if (!updateUserByCode($pdo, $userCode, ['username' => $username, 'phone' => $phone, 'email' => $email])) {
-        sendJsonResponse(['status' => 'error', 'message' => 'خطایی هنگام ثبت اطلاعات کاربری رخ داد.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'An error occurred while saving account information.']);
     }
     $user = loadUserByCode($pdo, $userCode);
     if (!$user) {
-        sendJsonResponse(['status' => 'error', 'message' => 'کاربر یافت نشد.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
     }
     refreshSessionUser($user);
     sendJsonResponse([
         'status' => 'ok',
-        'message' => 'اطلاعات کاربری با موفقیت به‌روزرسانی شد.',
+        'message' => 'Account information updated successfully.',
         'user' => normalizeUserForResponse($user)
     ]);
 }
@@ -363,37 +639,37 @@ function handleUserUpdateAccount(array $payload, ?PDO $pdo, string $userCode): v
 function handleUserUpdatePassword(array $payload, ?PDO $pdo, string $userCode): void
 {
     if (!$pdo) {
-        sendJsonResponse(['status' => 'error', 'message' => 'اتصال به پایگاه داده برقرار نیست.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
     }
     if ($userCode === '') {
-        sendJsonResponse(['status' => 'error', 'message' => 'برای انجام این عملیات باید وارد شوید.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'You must be logged in to perform this action.']);
     }
     $current = trim((string)($payload['current_password'] ?? ''));
     $new = trim((string)($payload['new_password'] ?? ''));
     $confirm = trim((string)($payload['confirm_password'] ?? ''));
     if ($new === '' || $confirm === '') {
-        sendJsonResponse(['status' => 'error', 'message' => 'هر دو رمز عبور جدید و تایید آن مورد نیاز است.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'Both the new password and its confirmation are required.']);
     }
     if ($new !== $confirm) {
-        sendJsonResponse(['status' => 'error', 'message' => 'رمز عبور جدید و تکرار آن باید یکسان باشند.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'The new password and confirmation must match.']);
     }
     if (mb_strlen($new, 'UTF-8') < 8) {
-        sendJsonResponse(['status' => 'error', 'message' => 'رمز عبور جدید باید حداقل ۸ کاراکتر باشد.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'The new password must be at least eight characters.']);
     }
     $user = loadUserByCode($pdo, $userCode);
     if (!$user || !password_verify($current, (string)($user['password_hash'] ?? ''))) {
-        sendJsonResponse(['status' => 'error', 'message' => 'رمز عبور جاری اشتباه است.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'Current password is incorrect.']);
     }
     $hash = password_hash($new, PASSWORD_DEFAULT);
     if ($hash === false || !updateUserByCode($pdo, $userCode, ['password_hash' => $hash])) {
-        sendJsonResponse(['status' => 'error', 'message' => 'خطایی هنگام ثبت رمز عبور رخ داد.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'An error occurred while saving the password.']);
     }
     $user = loadUserByCode($pdo, $userCode);
     if (!$user) {
-        sendJsonResponse(['status' => 'error', 'message' => 'کاربر یافت نشد.']);
+        sendJsonResponse(['status' => 'error', 'message' => 'User not found.']);
     }
     refreshSessionUser($user);
-    sendJsonResponse(['status' => 'ok', 'message' => 'رمز عبور با موفقیت به‌روزرسانی شد.']);
+    sendJsonResponse(['status' => 'ok', 'message' => 'Password updated successfully.']);
 }
 
 function normalizeUserForResponse(array $row): array
@@ -431,7 +707,7 @@ function buildUserDisplayNameFromRow(array $user): string
         }
         return $value;
     }
-    return 'ادمین';
+    return 'Admin';
 }
 
 function createGalleryCategory(PDO $pdo, string $name): array
@@ -465,7 +741,7 @@ function updateGalleryCategory(PDO $pdo, int $id, string $name): array
         $count = (int)$stmt->fetchColumn();
     } catch (PDOException $err) {
         error_log('Failed to check category slug: ' . $err->getMessage());
-        return ['status' => 'error', 'message' => 'خطا در بررسی دسته بندی.'];
+        return ['status' => 'error', 'message' => 'Error verifying the category.'];
     }
     $attempt = 0;
     $baseSlug = $slug;
@@ -478,7 +754,7 @@ function updateGalleryCategory(PDO $pdo, int $id, string $name): array
             $count = (int)$stmt->fetchColumn();
         } catch (PDOException $err) {
             error_log('Failed to check category slug: ' . $err->getMessage());
-            return ['status' => 'error', 'message' => 'خطا در بررسی دسته بندی.'];
+            return ['status' => 'error', 'message' => 'Error verifying the category.'];
         }
     }
     try {
@@ -490,9 +766,9 @@ function updateGalleryCategory(PDO $pdo, int $id, string $name): array
         ]);
     } catch (PDOException $err) {
         error_log('Failed to update gallery category: ' . $err->getMessage());
-        return ['status' => 'error', 'message' => 'خطا در بروزرسانی دسته بندی.'];
+        return ['status' => 'error', 'message' => 'Error updating the category.'];
     }
-    return ['status' => 'ok', 'message' => 'دسته بندی با موفقیت بروزرسانی شد.'];
+    return ['status' => 'ok', 'message' => 'Category updated successfully.'];
 }
 
 function deleteGalleryCategory(PDO $pdo, int $id): array
@@ -502,9 +778,9 @@ function deleteGalleryCategory(PDO $pdo, int $id): array
         $stmt->execute([':id' => $id]);
     } catch (PDOException $err) {
         error_log('Failed to delete gallery category: ' . $err->getMessage());
-        return ['status' => 'error', 'message' => 'نمی‌توان دسته بندی را حذف کرد، ابتدا تصاویر مرتبط را پاک کنید.'];
+        return ['status' => 'error', 'message' => 'Cannot delete the category; please remove its images first.'];
     }
-    return ['status' => 'ok', 'message' => 'دسته بندی حذف شد.'];
+    return ['status' => 'ok', 'message' => 'Category deleted successfully.'];
 }
 
 function ensureUniqueCategorySlug(PDO $pdo, string $base): string
@@ -535,25 +811,25 @@ function saveGalleryPhoto(PDO $pdo, array $payload, array $file): array
     $title = trim((string)($payload['title'] ?? ''));
     $alt = trim((string)($payload['alt_text'] ?? ''));
     $categoryId = (int)($payload['category_id'] ?? 0);
-    if ($title === '' || $alt === '' || $categoryId <= 0) {
-        return ['status' => 'error', 'message' => 'اطلاعات تصویر کامل نیست.'];
+    if ($title === '' || $categoryId <= 0) {
+        return ['status' => 'error', 'message' => 'Image information is incomplete.'];
     }
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
-        return ['status' => 'error', 'message' => 'فایل تصویر ارسال نشده است.'];
+        return ['status' => 'error', 'message' => 'No image file was uploaded.'];
     }
     $extension = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
-    $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+    $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
     if (!in_array($extension, $allowed, true)) {
-        return ['status' => 'error', 'message' => 'فرمت فایل پشتیبانی نمی شود.'];
+        return ['status' => 'error', 'message' => 'The file format is not supported.'];
     }
     $uploadDir = __DIR__ . '/../uploads/gallery';
     if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
-        return ['status' => 'error', 'message' => 'دسترسی به مسیر بارگذاری ممکن نیست.'];
+        return ['status' => 'error', 'message' => 'Upload path is not writable.'];
     }
     $filename = uniqid('gallery-', true) . '.' . $extension;
     $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $filename;
     if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
-        return ['status' => 'error', 'message' => 'بارگذاری فایل انجام نشد.'];
+        return ['status' => 'error', 'message' => 'File upload failed.'];
     }
     $relativePath = 'uploads/gallery/' . $filename;
     try {
@@ -566,7 +842,127 @@ function saveGalleryPhoto(PDO $pdo, array $payload, array $file): array
         ]);
     } catch (PDOException $err) {
         error_log('Gallery photo insert failed: ' . $err->getMessage());
-        return ['status' => 'error', 'message' => 'خطا در ذخیره تصویر.'];
+        return ['status' => 'error', 'message' => 'Error saving the image.'];
     }
     return ['status' => 'ok'];
+}
+
+function loadGalleryPhotoById(PDO $pdo, int $photoId): ?array
+{
+    if ($photoId <= 0) {
+        return null;
+    }
+    try {
+        $stmt = $pdo->prepare('SELECT `photo_id`, `filename`, `category_id`, `title`, `alt_text` FROM `gallery` WHERE `photo_id` = :photo_id LIMIT 1');
+        $stmt->execute([':photo_id' => $photoId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $err) {
+        error_log('Failed to fetch gallery photo: ' . $err->getMessage());
+        return null;
+    }
+    return is_array($row) ? $row : null;
+}
+
+function updateGalleryPhoto(PDO $pdo, int $photoId, string $title, string $alt, int $categoryId): array
+{
+    if ($photoId <= 0 || $title === '' || $categoryId <= 0) {
+        return ['status' => 'error', 'message' => 'Photo information is incomplete.'];
+    }
+    try {
+        $stmt = $pdo->prepare('UPDATE `gallery` SET `title` = :title, `alt_text` = :alt_text, `category_id` = :category_id WHERE `photo_id` = :photo_id');
+        $stmt->execute([
+            ':title' => $title,
+            ':alt_text' => $alt,
+            ':category_id' => $categoryId,
+            ':photo_id' => $photoId
+        ]);
+    } catch (PDOException $err) {
+        error_log('Failed to update gallery photo: ' . $err->getMessage());
+        return ['status' => 'error', 'message' => 'Error updating the photo.'];
+    }
+    return ['status' => 'ok'];
+}
+
+function replaceGalleryPhoto(PDO $pdo, int $photoId, array $file): array
+{
+    if ($photoId <= 0) {
+        return ['status' => 'error', 'message' => 'No photo selected.'];
+    }
+    $current = loadGalleryPhotoById($pdo, $photoId);
+    if (!$current) {
+        return ['status' => 'error', 'message' => 'Photo not found.'];
+    }
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        return ['status' => 'error', 'message' => 'No image file was uploaded.'];
+    }
+    $extension = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+    $allowed = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
+    if (!in_array($extension, $allowed, true)) {
+        return ['status' => 'error', 'message' => 'The file format is not supported.'];
+    }
+    $uploadDir = __DIR__ . '/../uploads/gallery';
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+        return ['status' => 'error', 'message' => 'Upload path is not writable.'];
+    }
+    $filename = uniqid('gallery-', true) . '.' . $extension;
+    $targetPath = $uploadDir . DIRECTORY_SEPARATOR . $filename;
+    if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
+        return ['status' => 'error', 'message' => 'File upload failed.'];
+    }
+    $relativePath = 'uploads/gallery/' . $filename;
+    try {
+        $stmt = $pdo->prepare('UPDATE `gallery` SET `filename` = :filename, `uploaded_at` = CURRENT_TIMESTAMP WHERE `photo_id` = :photo_id');
+        $stmt->execute([
+            ':filename' => $relativePath,
+            ':photo_id' => $photoId
+        ]);
+    } catch (PDOException $err) {
+        @unlink($targetPath);
+        error_log('Gallery photo replace failed: ' . $err->getMessage());
+        return ['status' => 'error', 'message' => 'Error replacing the photo.'];
+    }
+    deleteGalleryPhotoFile((string)$current['filename'], $photoId);
+    return ['status' => 'ok'];
+}
+
+function deleteGalleryPhoto(PDO $pdo, int $photoId): array
+{
+    if ($photoId <= 0) {
+        return ['status' => 'error', 'message' => 'No photo selected.'];
+    }
+    $photo = loadGalleryPhotoById($pdo, $photoId);
+    if (!$photo) {
+        return ['status' => 'error', 'message' => 'Photo not found.'];
+    }
+    try {
+        $stmt = $pdo->prepare('DELETE FROM `gallery` WHERE `photo_id` = :photo_id');
+        $stmt->execute([':photo_id' => $photoId]);
+    } catch (PDOException $err) {
+        error_log('Failed to delete gallery photo: ' . $err->getMessage());
+        return ['status' => 'error', 'message' => 'Error deleting the photo.'];
+    }
+    deleteGalleryPhotoFile((string)$photo['filename'], $photoId);
+    return ['status' => 'ok'];
+}
+
+function deleteGalleryPhotoFile(string $relativePath, int $photoId): void
+{
+    $clean = ltrim(str_replace(['..\\', '../'], '', $relativePath), '/\\');
+    if ($clean !== '') {
+        $base = realpath(__DIR__ . '/../');
+        if ($base !== false) {
+            $normalizedBase = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $base);
+            $fullPath = realpath($base . DIRECTORY_SEPARATOR . $clean);
+            if ($fullPath !== false) {
+                $normalizedFull = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $fullPath);
+                if (stripos($normalizedFull, $normalizedBase) === 0) {
+                    @unlink($fullPath);
+                }
+            }
+        }
+    }
+    $thumbPath = __DIR__ . '/../uploads/gallery/thumbs/' . $photoId . '.jpg';
+    if (is_file($thumbPath)) {
+        @unlink($thumbPath);
+    }
 }

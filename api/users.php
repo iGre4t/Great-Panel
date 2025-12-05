@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $payload['user'];
         $code = trim((string)($user['code'] ?? ''));
         if ($code === '') {
-            sendJsonResponse(['status' => 'error', 'message' => 'کد کاربری یافت نشد.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'User unique code not found.']);
         }
         $name = trim((string)($user['name'] ?? ''));
         $phone = trim((string)($user['phone'] ?? ''));
@@ -24,15 +24,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $updated = updateUserRecord($pdo, $code, $name, $phone, $workId, $idNumber);
             if ($updated) {
-                sendJsonResponse(['status' => 'ok', 'message' => 'اطلاعات کاربر به‌روزرسانی شد.']);
+                sendJsonResponse(['status' => 'ok', 'message' => 'User information updated successfully.']);
             }
-            sendJsonResponse(['status' => 'error', 'message' => 'کاربری با این کد یافت نشد.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'No user found with this code.']);
         } catch (PDOException $err) {
             error_log('User update failed: ' . $err->getMessage());
-            sendJsonResponse(['status' => 'error', 'message' => 'خطا در ذخیره اطلاعات کاربر.']);
+            sendJsonResponse(['status' => 'error', 'message' => 'Failed to save user information.']);
         }
     }
-    sendJsonResponse(['status' => 'error', 'message' => 'درخواست نامعتبر است.']);
+    sendJsonResponse(['status' => 'error', 'message' => 'Invalid request.']);
 }
 
 $users = [];

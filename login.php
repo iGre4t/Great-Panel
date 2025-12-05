@@ -2,7 +2,7 @@
 session_start();
 
 if (!empty($_SESSION['authenticated'])) {
-  header('Location: index.php');
+  header('Location: panel.php');
   exit;
 }
 
@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           ];
           $sessionUser['display_name'] = buildUserDisplayName($sessionUser);
           $_SESSION['user'] = $sessionUser;
-          header('Location: index.php');
+          header('Location: panel.php');
           exit;
         }
       } catch (PDOException $exception) {
@@ -82,7 +82,7 @@ function buildUserDisplayName(array $user = []): string
     }
     return $value;
   }
-  return 'ادمین';
+  return 'Admin';
 }
 ?>
 <!doctype html>
@@ -90,7 +90,7 @@ function buildUserDisplayName(array $user = []): string
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>پنل مدیریت</title>
+    <title>Admin Panel</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="styles.css" />
     <style>
@@ -205,8 +205,8 @@ function buildUserDisplayName(array $user = []): string
     <main>
       <section class="login-card">
         <div class="brand-logo">GN</div>
-        <h1 class="brand-title">پنل مدیریت</h1>
-        <p class="brand-subtitle">ورود برای ادامه مدیریت</p>
+        <h1 class="brand-title">Admin Panel</h1>
+        <p class="brand-subtitle">Sign in to continue managing</p>
         <?php if ($errors): ?>
           <div class="alert" role="alert" aria-live="assertive">
             <ul>
@@ -218,14 +218,14 @@ function buildUserDisplayName(array $user = []): string
         <?php endif; ?>
         <form method="post" class="login-form" novalidate>
           <label class="field">
-            <span>نام کاربری</span>
-            <input name="username" type="text" placeholder="مثال: admin" value="<?= escape($username) ?>" autofocus required />
+            <span>Username</span>
+            <input name="username" type="text" placeholder="e.g. admin" value="<?= escape($username) ?>" autofocus required />
           </label>
           <label class="field">
-            <span>رمز عبور</span>
+            <span>Password</span>
             <input name="password" type="password" placeholder="••••••••" required />
           </label>
-          <button type="submit">ورود</button>
+          <button type="submit">Sign In</button>
         </form>
       </section>
     </main>
