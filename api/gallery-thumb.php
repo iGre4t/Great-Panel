@@ -3,9 +3,19 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/lib/common.php';
 
-const THUMB_MAX_WIDTH = 360;
-const THUMB_MAX_HEIGHT = 280;
-const THUMB_QUALITY = 65;
+const THUMB_MODES = [
+    'default' => [
+        'maxWidth' => 360,
+        'maxHeight' => 280,
+        'quality' => 65,
+    ],
+    'preview' => [
+        'maxWidth' => 260,
+        'maxHeight' => 200,
+        'quality' => 50,
+    ],
+];
+const DEFAULT_THUMB_MODE = 'default';
 
 function sendNotFound(): void
 {
@@ -105,12 +115,19 @@ if ($sourcePath === false || stripos($normalizedSource, $normalizedBase) !== 0) 
     sendNotFound();
 }
 
+$mode = strtolower(trim((string)($_GET['mode'] ?? DEFAULT_THUMB_MODE)));
+if ($mode === '' || !isset(THUMB_MODES[$mode])) {
+    $mode = DEFAULT_THUMB_MODE;
+}
+$modeConfig = THUMB_MODES[$mode];
+
 $thumbDir = $uploadsBase . DIRECTORY_SEPARATOR . 'thumbs';
 if (!is_dir($thumbDir) && !mkdir($thumbDir, 0755, true) && !is_dir($thumbDir)) {
     sendNotFound();
 }
 
-$thumbPath = $thumbDir . DIRECTORY_SEPARATOR . "{$photoId}.jpg";
+$thumbFilename = "{$photoId}.{$mode}.jpg";
+$thumbPath = $thumbDir . DIRECTORY_SEPARATOR . $thumbFilename;
 $sourceMTime = filemtime($sourcePath);
 if ($sourceMTime === false) {
     sendNotFound();
@@ -132,7 +149,7 @@ if ($width <= 0 || $height <= 0) {
     sendNotFound();
 }
 
-$scale = min(1, THUMB_MAX_WIDTH / $width, THUMB_MAX_HEIGHT / $height);
+$scale = min(1, $modeConfig['maxWidth'] / $width, $modeConfig['maxHeight'] / $height);
 $scale = max($scale, 0.1);
 $newWidth = max(1, (int)round($width * $scale));
 $newHeight = max(1, (int)round($height * $scale));
@@ -152,7 +169,7 @@ imagecopyresampled(
     $height
 );
 
-$created = imagejpeg($thumbImage, $thumbPath, THUMB_QUALITY);
+$created = imagejpeg($thumbImage, $thumbPath, $modeConfig['quality']);
 imagedestroy($sourceImage);
 imagedestroy($thumbImage);
 

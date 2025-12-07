@@ -516,7 +516,7 @@ CREATE TABLE IF NOT EXISTS `gallery_category` (
 CREATE TABLE IF NOT EXISTS `gallery` (
   `photo_id` INT(10) UNSIGNED ZEROFILL NOT NULL AUTO_INCREMENT,
   `filename` VARCHAR(255) NOT NULL,
-  `category_id` INT UNSIGNED NOT NULL,
+  `category_id` INT UNSIGNED DEFAULT NULL,
   `title` VARCHAR(255) NOT NULL,
   `alt_text` VARCHAR(255) NOT NULL,
   `uploaded_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -530,6 +530,11 @@ CREATE TABLE IF NOT EXISTS `gallery` (
 SQL;
 
     $pdo->exec($sql);
+    try {
+        $pdo->exec('ALTER TABLE `gallery` MODIFY `category_id` INT UNSIGNED DEFAULT NULL');
+    } catch (PDOException $err) {
+        // Ignore if the column is already configured or the table is missing.
+    }
 }
 
 function loadGalleryCategories(PDO $pdo): array
@@ -811,8 +816,11 @@ function saveGalleryPhoto(PDO $pdo, array $payload, array $file): array
     $title = trim((string)($payload['title'] ?? ''));
     $alt = trim((string)($payload['alt_text'] ?? ''));
     $categoryId = (int)($payload['category_id'] ?? 0);
-    if ($title === '' || $categoryId <= 0) {
+    if ($title === '') {
         return ['status' => 'error', 'message' => 'Image information is incomplete.'];
+    }
+    if ($categoryId === null || $categoryId <= 0) {
+        $categoryId = null;
     }
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         return ['status' => 'error', 'message' => 'No image file was uploaded.'];
@@ -863,10 +871,13 @@ function loadGalleryPhotoById(PDO $pdo, int $photoId): ?array
     return is_array($row) ? $row : null;
 }
 
-function updateGalleryPhoto(PDO $pdo, int $photoId, string $title, string $alt, int $categoryId): array
+function updateGalleryPhoto(PDO $pdo, int $photoId, string $title, string $alt, ?int $categoryId): array
 {
-    if ($photoId <= 0 || $title === '' || $categoryId <= 0) {
+    if ($photoId <= 0 || $title === '') {
         return ['status' => 'error', 'message' => 'Photo information is incomplete.'];
+    }
+    if ($categoryId === null || $categoryId <= 0) {
+        $categoryId = null;
     }
     try {
         $stmt = $pdo->prepare('UPDATE `gallery` SET `title` = :title, `alt_text` = :alt_text, `category_id` = :category_id WHERE `photo_id` = :photo_id');

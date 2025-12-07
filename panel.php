@@ -635,7 +635,7 @@ $accountEmail = $currentUser['email'] ?? '';
             </label>
             <label class="field">
               <span>Category</span>
-              <select data-gallery-photo-category name="category_id" required>
+              <select data-gallery-photo-category name="category_id">
                 <option value="">Select a category</option>
               </select>
             </label>
@@ -689,7 +689,7 @@ $accountEmail = $currentUser['email'] ?? '';
             </label>
             <label class="field">
               <span>Category</span>
-              <select data-gallery-photo-category name="category_id" required>
+              <select data-gallery-photo-category name="category_id">
                 <option value="">Select a category</option>
               </select>
             </label>
@@ -734,8 +734,27 @@ $accountEmail = $currentUser['email'] ?? '';
           </button>
         </div>
         <div class="gallery-thumb-grid-wrapper">
-          <div id="photo-chooser-thumb-grid" class="gallery-thumb-grid"></div>
-          <p id="photo-chooser-thumb-empty" class="muted gallery-thumb-empty hidden">No photos uploaded yet.</p>
+          <div class="gallery-search-row photo-chooser-search-row">
+            <label class="gallery-search-field">
+              <span class="gallery-search-label">Search photo chooser</span>
+              <input
+                type="search"
+                class="gallery-search-input"
+                data-photo-chooser-search
+                placeholder="Search by photo title or category"
+                autocomplete="off"
+                aria-label="Search the photo chooser by title or category"
+              />
+            </label>
+            <span class="gallery-search-count" data-photo-chooser-search-count>
+              0 photos
+            </span>
+          </div>
+          <div class="photo-chooser-scroll">
+            <div id="photo-chooser-thumb-grid" class="gallery-thumb-grid"></div>
+            <p class="muted gallery-thumb-loading hidden" data-gallery-loading>Loading photos…</p>
+            <p id="photo-chooser-thumb-empty" class="muted gallery-thumb-empty hidden">No photos uploaded yet.</p>
+          </div>
           <div class="gallery-thumb-actions">
             <button type="button" id="photo-chooser-load-more" class="btn ghost hidden">Load More</button>
           </div>

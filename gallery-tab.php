@@ -22,7 +22,24 @@
             <button type="button" id="open-gallery-upload-modal" class="btn primary">Upload photo</button>
           </div>
           <div class="gallery-thumb-grid-wrapper">
+            <div class="gallery-search-row">
+              <label class="gallery-search-field">
+                <span class="gallery-search-label">Search gallery photos</span>
+                <input
+                  type="search"
+                  class="gallery-search-input"
+                  data-gallery-search
+                  placeholder="Search by photo title or category"
+                  autocomplete="off"
+                  aria-label="Search gallery photos by title or category"
+                />
+              </label>
+              <span class="gallery-search-count" data-gallery-search-count>
+                0 photos
+              </span>
+            </div>
             <div id="gallery-thumb-grid" class="gallery-thumb-grid"></div>
+            <p class="muted gallery-thumb-loading hidden" data-gallery-loading>Loading photos…</p>
             <p id="gallery-thumb-empty" class="muted gallery-thumb-empty hidden">No photos uploaded yet.</p>
             <div class="gallery-thumb-actions">
               <button type="button" id="gallery-load-more" class="btn ghost hidden">Load More</button>
@@ -58,7 +75,7 @@
               </label>
               <label class="field">
                 <span>Category</span>
-                <select data-gallery-photo-category name="category_id" required>
+              <select data-gallery-photo-category name="category_id">
                   <option value="">Select a category</option>
                 </select>
               </label>
