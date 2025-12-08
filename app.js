@@ -1534,6 +1534,332 @@ async function syncSettings(payload) {
   }
 }
 
+const DEFAULT_TOAST_DURATION = 5000;
+const DEFAULT_TOAST_ROOT_ID = "default-toast-root";
+
+function ensureDefaultToastRoot() {
+  let root = document.getElementById(DEFAULT_TOAST_ROOT_ID);
+  if (root) {
+    return root;
+  }
+  const host = document.body ?? document.documentElement;
+  if (!host) {
+    return null;
+  }
+  root = document.createElement("div");
+  root.id = DEFAULT_TOAST_ROOT_ID;
+  root.className = "default-toast-root";
+  host.appendChild(root);
+  return root;
+}
+
+function showDefaultToast(content, { duration = DEFAULT_TOAST_DURATION } = {}) {
+  if (!content) {
+    return null;
+  }
+  const root = ensureDefaultToastRoot();
+  if (!root) {
+    return null;
+  }
+  const toast = document.createElement("div");
+  toast.className = "default-toast";
+  toast.setAttribute("role", "status");
+  toast.setAttribute("aria-live", "polite");
+  toast.setAttribute("dir", "rtl");
+
+  const messageNode = document.createElement("div");
+  messageNode.className = "default-toast__message";
+  if (content instanceof Node) {
+    messageNode.appendChild(content);
+  } else {
+    messageNode.textContent = String(content);
+  }
+  toast.appendChild(messageNode);
+
+  const progress = document.createElement("div");
+  progress.className = "default-toast__progress";
+  const progressBar = document.createElement("span");
+  progressBar.className = "default-toast__progress-bar";
+  progressBar.style.animation = `default-toast-progress ${duration}ms linear forwards`;
+  progressBar.style.animationPlayState = "running";
+  progressBar.style.animationPlayState = "running";
+  progress.appendChild(progressBar);
+  toast.appendChild(progress);
+
+  root.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.classList.add("default-toast--visible");
+  });
+
+  let remaining = duration;
+  let timerStart = performance.now();
+  let dismissTimer = window.setTimeout(dismiss, remaining);
+  let isDismissing = false;
+  let paused = false;
+
+  function dismiss() {
+    if (isDismissing) {
+      return;
+    }
+    isDismissing = true;
+    clearTimeout(dismissTimer);
+    toast.classList.remove("default-toast--visible");
+    toast.addEventListener(
+      "transitionend",
+      event => {
+        if (event.propertyName === "opacity") {
+          toast.remove();
+        }
+      },
+      { once: true }
+    );
+  }
+
+  toast.addEventListener("click", dismiss);
+  toast.addEventListener("mouseenter", () => {
+    if (paused || isDismissing) {
+      return;
+    }
+    paused = true;
+    clearTimeout(dismissTimer);
+    const elapsed = performance.now() - timerStart;
+    remaining = Math.max(0, remaining - elapsed);
+    progressBar.style.animationPlayState = "paused";
+  });
+  toast.addEventListener("mouseleave", () => {
+    if (!paused || isDismissing || remaining <= 0) {
+      return;
+    }
+    paused = false;
+    timerStart = performance.now();
+    dismissTimer = window.setTimeout(dismiss, remaining);
+    progressBar.style.animationPlayState = "running";
+  });
+
+  return {
+    dismiss
+  };
+}
+
+
+const DEFAULT_SNACKBAR_ACTION_SHORTCUT = { key: "z", ctrlKey: true };
+const DEFAULT_SNACKBAR_ROOT_ID = "default-snackbar-root";
+const snackbarStack = [];
+let isSnackbarShortcutBound = false;
+
+function handleSnackbarKey(event) {
+  if (!snackbarStack.length) {
+    return;
+  }
+  const target = snackbarStack[0];
+  if (!target || !target.shortcut) {
+    return;
+  }
+  if (
+    event.target instanceof HTMLInputElement ||
+    event.target instanceof HTMLTextAreaElement ||
+    (event.target && event.target.isContentEditable)
+  ) {
+    return;
+  }
+  const shortcut = target.shortcut;
+  if (!shortcut.key || event.key.toLowerCase() !== shortcut.key.toLowerCase()) {
+    return;
+  }
+  if (Boolean(shortcut.ctrlKey) !== event.ctrlKey) {
+    return;
+  }
+  if (Boolean(shortcut.altKey) !== event.altKey) {
+    return;
+  }
+  if (Boolean(shortcut.shiftKey) !== event.shiftKey) {
+    return;
+  }
+  if (Boolean(shortcut.metaKey) !== event.metaKey) {
+    return;
+  }
+  event.preventDefault();
+  target.action?.();
+}
+
+function registerSnackbar(entry) {
+  snackbarStack.push(entry);
+  if (!isSnackbarShortcutBound) {
+    document.addEventListener("keydown", handleSnackbarKey);
+    isSnackbarShortcutBound = true;
+  }
+}
+
+function unregisterSnackbar(entry) {
+  const index = snackbarStack.indexOf(entry);
+  if (index !== -1) {
+    snackbarStack.splice(index, 1);
+  }
+  if (!snackbarStack.length && isSnackbarShortcutBound) {
+    document.removeEventListener("keydown", handleSnackbarKey);
+    isSnackbarShortcutBound = false;
+  }
+}
+
+function ensureDefaultSnackbarRoot() {
+  let root = document.getElementById(DEFAULT_SNACKBAR_ROOT_ID);
+  if (root) {
+    return root;
+  }
+  const host = document.body ?? document.documentElement;
+  if (!host) {
+    return null;
+  }
+  root = document.createElement("div");
+  root.id = DEFAULT_SNACKBAR_ROOT_ID;
+  root.className = "default-snackbar-root";
+  host.appendChild(root);
+  return root;
+}
+
+function showActionSnackbar({
+  message,
+  duration = DEFAULT_TOAST_DURATION,
+  onAction,
+  shortcut = DEFAULT_SNACKBAR_ACTION_SHORTCUT,
+  instructionLabel = "Click for undo or press Ctrl + Z"
+} = {}) {
+  if (!message) {
+    return null;
+  }
+  const root = ensureDefaultSnackbarRoot();
+  if (!root) {
+    return null;
+  }
+  const snackbar = document.createElement("div");
+  snackbar.className = "default-snackbar";
+  snackbar.setAttribute("role", "status");
+  snackbar.setAttribute("aria-live", "polite");
+  snackbar.setAttribute("dir", "rtl");
+  snackbar.tabIndex = 0;
+  let entry = null;
+
+  const content = document.createElement("div");
+  content.className = "default-snackbar__content";
+  const messageNode = document.createElement("div");
+  messageNode.textContent = String(message);
+  content.appendChild(messageNode);
+  const timerNode = document.createElement("span");
+  timerNode.className = "default-snackbar__timer";
+  content.appendChild(timerNode);
+  snackbar.appendChild(content);
+
+  const instructionNode = document.createElement("div");
+  instructionNode.className = "default-snackbar__instruction";
+  instructionNode.textContent = instructionLabel;
+  snackbar.appendChild(instructionNode);
+
+  const progress = document.createElement("div");
+  progress.className = "default-snackbar__progress";
+  const progressBar = document.createElement("span");
+  progressBar.className = "default-snackbar__progress-bar";
+  progressBar.style.animation = `default-toast-progress ${duration}ms linear forwards`;
+  progress.appendChild(progressBar);
+  snackbar.appendChild(progress);
+
+  root.insertBefore(snackbar, root.firstChild);
+  requestAnimationFrame(() => {
+    snackbar.classList.add("default-snackbar--visible");
+    progressBar.style.transform = "scaleX(0)";
+  });
+
+  let remaining = duration;
+  let timerStart = performance.now();
+  const updateTimer = () => {
+    const elapsed = performance.now() - timerStart;
+    const current = Math.max(0, remaining - elapsed);
+    timerNode.textContent = `${Math.ceil(current / 1000)}s`;
+  };
+  updateTimer();
+  let timerInterval = window.setInterval(updateTimer, 100);
+  let dismissTimer = window.setTimeout(dismiss, remaining);
+  let paused = false;
+
+  function cleanup() {
+    clearTimeout(dismissTimer);
+    clearInterval(timerInterval);
+    if (entry) {
+      unregisterSnackbar(entry);
+    }
+  }
+
+  let actionHandled = false;
+  function performAction() {
+    if (actionHandled) {
+      return;
+    }
+    actionHandled = true;
+    if (typeof onAction === "function") {
+      onAction();
+    }
+    dismiss();
+  }
+
+
+  function dismiss() {
+    if (!snackbar.parentElement) {
+      return;
+    }
+    cleanup();
+    snackbar.classList.remove("default-snackbar--visible");
+    snackbar.addEventListener(
+      "transitionend",
+      event => {
+        if (event.propertyName === "opacity" || event.propertyName === "transform") {
+          snackbar.remove();
+        }
+      },
+      { once: true }
+    );
+  }
+
+  snackbar.addEventListener("click", performAction);
+  snackbar.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      performAction();
+    }
+  });
+  snackbar.addEventListener("mouseenter", () => {
+    if (paused || !timerInterval) {
+      return;
+    }
+    paused = true;
+    clearTimeout(dismissTimer);
+    clearInterval(timerInterval);
+    const elapsed = performance.now() - timerStart;
+    remaining = Math.max(0, remaining - elapsed);
+    progressBar.style.animationPlayState = "paused";
+    updateTimer();
+  });
+  snackbar.addEventListener("mouseleave", () => {
+    if (!paused || remaining <= 0) {
+      return;
+    }
+    paused = false;
+    timerStart = performance.now();
+    timerInterval = window.setInterval(updateTimer, 100);
+    dismissTimer = window.setTimeout(dismiss, remaining);
+    progressBar.style.animationPlayState = "running";
+  });
+
+  entry = {
+    action: performAction,
+    shortcut,
+    snackbar
+  };
+  registerSnackbar(entry);
+
+  return {
+    dismiss,
+    action: performAction
+  };
+}
 
 function qs(sel, root = document) { return root.querySelector(sel); }
 function qsa(sel, root = document) { return [...root.querySelectorAll(sel)]; }
@@ -2672,6 +2998,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
   galleryPhotoModalDeleteButton?.addEventListener('click', handleGalleryPhotoDelete);
+
+  const testToastTrigger = qs('[data-test-toast]');
+  testToastTrigger?.addEventListener('click', () => {
+    showDefaultToast('این اعلان تست سبک پیش‌فرض است.', {
+      duration: DEFAULT_TOAST_DURATION
+    });
+  });
+
+  const testSnackbarTrigger = qs('[data-test-snackbar]');
+  testSnackbarTrigger?.addEventListener('click', () => {
+    showActionSnackbar({
+      message: 'اقدام انجام شد. اگر نیاز دارید، آن را بازگردانید.',
+      actionLabel: 'Undo (Ctrl+Z)',
+      duration: DEFAULT_TOAST_DURATION,
+      onAction: () => {
+        showDefaultToast('بازگشت انجام شد.', { duration: 2500 });
+      }
+    });
+  });
 
   window.addEventListener('storage', updateKpis);
 });

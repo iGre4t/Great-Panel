@@ -331,6 +331,9 @@ $accountEmail = $currentUser['email'] ?? '';
                   <button type="button" class="sub-item" data-pane="appearance">
                     Appearance
                   </button>
+                  <button type="button" class="sub-item" data-pane="beta-test">
+                    Beta Test
+                  </button>
                 </div>
               </aside>
               <div class="sub-content">
@@ -423,6 +426,27 @@ $accountEmail = $currentUser['email'] ?? '';
                       <button type="button" class="btn ghost" id="reset-appearance-settings">Reset</button>
                     </div>
                     <p class="hint" id="appearance-hint">Fine-tune the UI colors directly from the developer lab.</p>
+                  </div>
+                </div>
+                <div class="sub-pane beta-test-pane" data-pane="beta-test" dir="rtl">
+                  <div class="card settings-section">
+                    <div class="section-header">
+                      <h3>Notifications</h3>
+                    </div>
+                    <div class="section-footer beta-test-footer">
+                      <button type="button" class="btn secondary" data-test-toast aria-label="Test Toast">
+                        Test Toast
+                      </button>
+                      <button
+                        type="button"
+                        class="btn secondary"
+                        data-test-snackbar
+                        aria-label="Test Snackbar"
+                      >
+                        Snackbar Test
+                      </button>
+                    </div>
+                    <p class="hint">Trigger a toast-style notification for testing.</p>
                   </div>
                 </div>
               </div>
