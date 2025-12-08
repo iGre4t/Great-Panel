@@ -880,11 +880,33 @@ function normalizeGalleryCategory(row) {
   if (id <= 0) {
     return null;
   }
+  const motherRaw = row.mother_category_id ?? row.motherCategoryId ?? null;
+  const motherCandidate = Number(motherRaw ?? 0);
+  const motherCategoryId =
+    Number.isFinite(motherCandidate) && motherCandidate > 0
+      ? motherCandidate
+      : null;
   return {
     id,
     name: normalizeValue(row.name).trim(),
-    slug: normalizeValue(row.slug).trim()
+    slug: normalizeValue(row.slug).trim(),
+    motherCategoryId
   };
+}
+
+function getCategoryLabel(category) {
+  if (!category || typeof category !== "object") {
+    return "";
+  }
+  const name = normalizeValue(category.name).trim();
+  if (name) {
+    return name;
+  }
+  const slug = normalizeValue(category.slug).trim();
+  if (slug) {
+    return slug;
+  }
+  return `Category ${category.id ?? ""}`;
 }
 
 // Normalizes gallery photo payloads so the frontend can read consistent fields.
@@ -925,12 +947,49 @@ function resetGalleryVisibleCount() {
 
 // Keeps gallery table, dropdown, and CTA text aligned with the current data set.
 function renderGalleryCategories() {
+  populateGalleryCategoryMotherFormSelect();
   renderGalleryCategoryTable();
   updateGalleryPhotoCategorySelect();
   const statusMessage = GALLERY_CATEGORIES.length
     ? `${GALLERY_CATEGORIES.length} categories available`
     : "No categories available yet.";
   setGalleryStatus(statusMessage, false);
+}
+
+function populateGalleryCategoryMotherFormSelect() {
+  const select = qs("#gallery-category-mother");
+  if (!select) {
+    return;
+  }
+  fillMotherCategorySelect(select);
+}
+
+function fillMotherCategorySelect(select, { excludeId = null, selectedId = null } = {}) {
+  if (!select) {
+    return;
+  }
+  select.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "No mother category";
+  select.appendChild(placeholder);
+  GALLERY_CATEGORIES.forEach(category => {
+    if (excludeId !== null && category.id === excludeId) {
+      return;
+    }
+    const option = document.createElement("option");
+    option.value = String(category.id);
+    option.textContent = getCategoryLabel(category);
+    if (selectedId !== null && category.id === selectedId) {
+      option.selected = true;
+    }
+    select.appendChild(option);
+  });
+  if (selectedId === null) {
+    select.value = "";
+  } else {
+    select.value = String(selectedId);
+  }
 }
 
 // Builds the gallery category editor rows and wires the save/delete buttons to their handlers.
@@ -960,6 +1019,16 @@ function renderGalleryCategoryTable() {
     nameInput.dataset.categoryId = String(category.id);
     nameCell.appendChild(nameInput);
     row.appendChild(nameCell);
+    const motherCell = document.createElement("td");
+    const motherSelect = document.createElement("select");
+    motherSelect.className = "category-mother-select";
+    motherSelect.dataset.categoryId = String(category.id);
+    fillMotherCategorySelect(motherSelect, {
+      excludeId: category.id,
+      selectedId: category.motherCategoryId ?? null
+    });
+    motherCell.appendChild(motherSelect);
+    row.appendChild(motherCell);
     const actionCell = document.createElement("td");
     actionCell.classList.add("category-actions");
     const saveBtn = document.createElement("button");
@@ -967,7 +1036,7 @@ function renderGalleryCategoryTable() {
     saveBtn.className = "btn primary";
     saveBtn.textContent = "Save";
     const inlineSave = () => {
-      void updateGalleryCategoryNameInline(category.id, nameInput, saveBtn);
+      void updateGalleryCategoryNameInline(category.id, nameInput, motherSelect, saveBtn);
     };
     saveBtn.addEventListener("click", inlineSave);
     actionCell.appendChild(saveBtn);
@@ -988,7 +1057,7 @@ function renderGalleryCategoryTable() {
   });
 }
 // Sends inline edits for gallery categories through the shared API endpoint.
-async function updateGalleryCategoryNameInline(categoryId, inputEl, triggerButton) {
+async function updateGalleryCategoryNameInline(categoryId, inputEl, motherSelect, triggerButton) {
   if (!categoryId) {
     return;
   }
@@ -999,11 +1068,13 @@ async function updateGalleryCategoryNameInline(categoryId, inputEl, triggerButto
     return;
   }
   triggerButton?.setAttribute("disabled", "disabled");
+  const motherValue = (motherSelect?.value ?? "").trim();
   try {
     const payload = {
       action: "update_gallery_category",
       id: categoryId,
-      name: trimmedName
+      name: trimmedName,
+      mother_category_id: motherValue
     };
     const result = await sendGalleryRequest(payload);
     const successMessage = result?.message || "Category updated successfully.";
@@ -1331,6 +1402,10 @@ function resetGalleryCategoryForm() {
   const nameInput = qs("#gallery-category-name");
   if (nameInput) {
     nameInput.value = "";
+  }
+  const motherSelect = qs("#gallery-category-mother");
+  if (motherSelect) {
+    motherSelect.value = "";
   }
   const submitBtn = qs("#gallery-category-submit");
   if (submitBtn) {
@@ -2526,14 +2601,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   galleryCategoryForm?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const input = qs('#gallery-category-name');
+    const motherSelect = qs('#gallery-category-mother');
     const name = (input?.value ?? '').trim();
+    const motherValue = (motherSelect?.value ?? '').trim();
     if (!name) {
       setGalleryStatus('Category name is required.', true);
       return;
     }
     const payload = {
       action: 'add_gallery_category',
-      name
+      name,
+      mother_category_id: motherValue
     };
     setGalleryStatus('Saving category...', false);
     galleryCategorySubmitButton?.setAttribute('disabled', 'disabled');

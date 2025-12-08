@@ -97,6 +97,12 @@
               <span>Category name</span>
               <input id="gallery-category-name" type="text" required />
             </label>
+            <label class="field">
+              <span>Mother category (optional)</span>
+              <select id="gallery-category-mother" name="mother_category_id">
+                <option value="">No mother category</option>
+              </select>
+            </label>
             <div class="modal-actions">
               <button type="button" class="btn hidden" id="gallery-category-cancel">Cancel</button>
               <button type="submit" class="btn primary" id="gallery-category-submit">Save category</button>
@@ -113,6 +119,7 @@
               <thead>
               <tr>
                 <th>Name</th>
+                <th>Mother</th>
                 <th>Actions</th>
               </tr>
               </thead>

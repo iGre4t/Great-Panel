@@ -376,13 +376,24 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(225,29,4
   text-align: right;
 }
 .gallery-category-table th:nth-child(2),
-.gallery-category-table td:nth-child(2) {
+.gallery-category-table td:nth-child(2),
+.gallery-category-table th:nth-child(3),
+.gallery-category-table td:nth-child(3) {
   text-align: center;
 }
 .gallery-category-table tbody tr:last-child td {
   border-bottom: none;
 }
 .gallery-category-table input.category-name-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 14px;
+  background: #fff;
+}
+.gallery-category-table .category-mother-select,
+#gallery-category-form select {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 10px;

@@ -345,7 +345,11 @@ if ($method === 'POST') {
         if ($name === '') {
             sendJsonResponse(['status' => 'error', 'message' => 'Invalid category name.']);
         }
-        $category = createGalleryCategory($pdo, $name);
+        $motherCategoryId = parseMotherCategoryId($payload['mother_category_id'] ?? null);
+        if ($motherCategoryId !== null && !galleryCategoryExists($pdo, $motherCategoryId)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Selected mother category does not exist.']);
+        }
+        $category = createGalleryCategory($pdo, $name, $motherCategoryId);
         if (empty($category['id'])) {
             sendJsonResponse(['status' => 'error', 'message' => 'Failed to save the category.']);
         }
@@ -356,10 +360,11 @@ if ($method === 'POST') {
         }
         $categoryId = (int)($payload['id'] ?? 0);
         $name = trim((string)($payload['name'] ?? ''));
+        $motherCategoryId = parseMotherCategoryId($payload['mother_category_id'] ?? null);
         if ($categoryId <= 0 || $name === '') {
             sendJsonResponse(['status' => 'error', 'message' => 'Category data is invalid.']);
         }
-        $result = updateGalleryCategory($pdo, $categoryId, $name);
+        $result = updateGalleryCategory($pdo, $categoryId, $name, $motherCategoryId);
         if ($result['status'] !== 'ok') {
             sendJsonResponse($result);
         }
@@ -503,14 +508,20 @@ function sendJsonResponse(array $payload): void
 
 function ensureGallerySchema(PDO $pdo): void
 {
-    $sql = <<<SQL
+        $sql = <<<SQL
 CREATE TABLE IF NOT EXISTS `gallery_category` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(128) NOT NULL,
   `slug` VARCHAR(64) NOT NULL,
+  `mother_category_id` INT UNSIGNED DEFAULT NULL,
   `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uniq_gallery_category_slug` (`slug`)
+  UNIQUE KEY `uniq_gallery_category_slug` (`slug`),
+  KEY `idx_gallery_category_mother` (`mother_category_id`),
+  CONSTRAINT `fk_gallery_category_mother` FOREIGN KEY (`mother_category_id`)
+    REFERENCES `gallery_category` (`id`)
+    ON DELETE SET NULL
+    ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `gallery` (
@@ -535,12 +546,27 @@ SQL;
     } catch (PDOException $err) {
         // Ignore if the column is already configured or the table is missing.
     }
+    try {
+        $pdo->exec('ALTER TABLE `gallery_category` ADD COLUMN `mother_category_id` INT UNSIGNED DEFAULT NULL AFTER `slug`');
+    } catch (PDOException $err) {
+        // Ignore if the column already exists or the table is missing.
+    }
+    try {
+        $pdo->exec('ALTER TABLE `gallery_category` ADD KEY `idx_gallery_category_mother` (`mother_category_id`)');
+    } catch (PDOException $err) {
+        // Ignore if the index already exists.
+    }
+    try {
+        $pdo->exec('ALTER TABLE `gallery_category` ADD CONSTRAINT `fk_gallery_category_mother` FOREIGN KEY (`mother_category_id`) REFERENCES `gallery_category` (`id`) ON DELETE SET NULL ON UPDATE CASCADE');
+    } catch (PDOException $err) {
+        // Ignore if the constraint already exists.
+    }
 }
 
 function loadGalleryCategories(PDO $pdo): array
 {
     try {
-        $stmt = $pdo->query('SELECT `id`, `name`, `slug` FROM `gallery_category` ORDER BY `name` ASC');
+        $stmt = $pdo->query('SELECT `id`, `name`, `slug`, `mother_category_id` FROM `gallery_category` ORDER BY `name` ASC');
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     } catch (PDOException $err) {
         error_log('Failed to fetch gallery categories: ' . $err->getMessage());
@@ -715,27 +741,37 @@ function buildUserDisplayNameFromRow(array $user): string
     return 'Admin';
 }
 
-function createGalleryCategory(PDO $pdo, string $name): array
+function createGalleryCategory(PDO $pdo, string $name, ?int $motherCategoryId = null): array
 {
     $slug = slugify($name);
     if ($slug === '') {
         $slug = 'category';
     }
     $slug = ensureUniqueCategorySlug($pdo, $slug);
-    $stmt = $pdo->prepare('INSERT INTO `gallery_category` (`name`, `slug`) VALUES (:name, :slug)');
+    $stmt = $pdo->prepare('INSERT INTO `gallery_category` (`name`, `slug`, `mother_category_id`) VALUES (:name, :slug, :mother)');
     $stmt->execute([
         ':name' => $name,
-        ':slug' => $slug
+        ':slug' => $slug,
+        ':mother' => $motherCategoryId
     ]);
     return [
         'id' => (int)$pdo->lastInsertId(),
         'name' => $name,
-        'slug' => $slug
+        'slug' => $slug,
+        'mother_category_id' => $motherCategoryId
     ];
 }
 
-function updateGalleryCategory(PDO $pdo, int $id, string $name): array
+function updateGalleryCategory(PDO $pdo, int $id, string $name, ?int $motherCategoryId = null): array
 {
+    if ($motherCategoryId !== null) {
+        if ($motherCategoryId === $id) {
+            return ['status' => 'error', 'message' => 'A category cannot be its own mother.'];
+        }
+        if (!galleryCategoryExists($pdo, $motherCategoryId)) {
+            return ['status' => 'error', 'message' => 'Selected mother category does not exist.'];
+        }
+    }
     $slug = slugify($name);
     if ($slug === '') {
         $slug = 'category';
@@ -763,10 +799,11 @@ function updateGalleryCategory(PDO $pdo, int $id, string $name): array
         }
     }
     try {
-        $stmt = $pdo->prepare('UPDATE `gallery_category` SET `name` = :name, `slug` = :slug WHERE `id` = :id');
+        $stmt = $pdo->prepare('UPDATE `gallery_category` SET `name` = :name, `slug` = :slug, `mother_category_id` = :mother WHERE `id` = :id');
         $stmt->execute([
             ':name' => $name,
             ':slug' => $slug,
+            ':mother' => $motherCategoryId,
             ':id' => $id
         ]);
     } catch (PDOException $err) {
@@ -809,6 +846,24 @@ function slugify(string $value): string
     $value = preg_replace('/[^\p{L}\p{N}]+/u', '-', $value) ?? '';
     $value = trim($value, '-');
     return $value;
+}
+
+function galleryCategoryExists(PDO $pdo, int $id): bool
+{
+    try {
+        $stmt = $pdo->prepare('SELECT COUNT(*) FROM `gallery_category` WHERE `id` = :id');
+        $stmt->execute([':id' => $id]);
+        return (int)$stmt->fetchColumn() > 0;
+    } catch (PDOException $err) {
+        error_log('Failed to check gallery category existence: ' . $err->getMessage());
+        return false;
+    }
+}
+
+function parseMotherCategoryId($value): ?int
+{
+    $id = (int)($value ?? 0);
+    return $id > 0 ? $id : null;
 }
 
 function saveGalleryPhoto(PDO $pdo, array $payload, array $file): array
