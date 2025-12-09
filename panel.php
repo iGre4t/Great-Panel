@@ -182,6 +182,15 @@ $accountEmail = $currentUser['email'] ?? '';
         <!-- Top bar displays the current tab title and hooks into sidebar toggle + live clock logic defined in app.js. -->
         <header class="topbar">
           <button id="sidebarToggle" class="icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar">≡</button>
+          <button
+            type="button"
+            class="icon-btn"
+            data-go-home
+            title="Go to home tab"
+            aria-label="Go to home tab"
+          >
+            <span class="ri ri-home-4-line" aria-hidden="true"></span>
+          </button>
           <h2 id="page-title">Home</h2>
           <div class="spacer"></div>
           <div id="live-clock" class="clock" aria-live="polite"></div>
@@ -258,7 +267,6 @@ $accountEmail = $currentUser['email'] ?? '';
                   <span>Work ID</span>
                   <input type="text" value="<?= htmlspecialchars($personalWorkId, ENT_QUOTES, 'UTF-8') ?>" readonly />
                 </label>
-                <p id="personal-info-msg" class="hint"></p>
                 <div class="section-footer">
                   <button type="submit" class="btn primary">Save</button>
                 </div>
@@ -283,7 +291,6 @@ $accountEmail = $currentUser['email'] ?? '';
                   <span>Email</span>
                   <input id="account-email" name="email" type="email" value="<?= htmlspecialchars($accountEmail, ENT_QUOTES, 'UTF-8') ?>" />
                 </label>
-                <p id="account-info-msg" class="hint"></p>
                 <div class="section-footer">
                   <button type="submit" class="btn primary">Save</button>
                 </div>
@@ -308,7 +315,6 @@ $accountEmail = $currentUser['email'] ?? '';
                   <span>Confirm new password</span>
                   <input id="confirm-password" name="confirm_password" type="password" autocomplete="new-password" />
                 </label>
-                <p id="privacy-msg" class="hint"></p>
                 <div class="section-footer">
                   <button type="submit" class="btn primary">Save</button>
                 </div>
@@ -444,6 +450,14 @@ $accountEmail = $currentUser['email'] ?? '';
                         aria-label="Test Snackbar"
                       >
                         Snackbar Test
+                      </button>
+                      <button
+                        type="button"
+                        class="btn secondary"
+                        data-test-error-snackbar
+                        aria-label="Test Error Snackbar"
+                      >
+                        Error Snackbar
                       </button>
                     </div>
                     <p class="hint">Trigger a toast-style notification for testing.</p>
@@ -668,10 +682,9 @@ $accountEmail = $currentUser['email'] ?? '';
             <button type="button" class="btn" data-gallery-upload-modal-close>Cancel</button>
             <button type="submit" class="btn primary">Upload photo</button>
           </div>
-          <p data-gallery-photo-msg class="hint"></p>
-        </form>
+          </form>
+        </div>
       </div>
-    </div>
 
     <!-- Gallery photo modal shows metadata and preview for each photo. -->
     <div
@@ -722,7 +735,6 @@ $accountEmail = $currentUser['email'] ?? '';
               <button type="button" class="btn ghost" data-gallery-photo-delete>Delete</button>
               <button type="submit" class="btn primary" data-gallery-photo-save>Save</button>
             </div>
-            <p class="hint" data-gallery-photo-msg></p>
             <input type="file" name="photo" accept="image/*" data-gallery-photo-replace-input hidden />
           </form>
         </div>

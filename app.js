@@ -49,6 +49,7 @@ const APPEARANCE_TOGGLE_KEY = "frontend_appearance_toggle";
 const APPEARANCE_HINT_DEFAULT = "Fine-tune the UI colors directly from the developer lab.";
 const LOCAL_UNCATEGORIZED_CATEGORY_NAME = "--no category--";
 let currentAppearanceState = { ...DEFAULT_APPEARANCE };
+let savedAppearanceState = { ...DEFAULT_APPEARANCE };
 const APPEARANCE_KEYS = ["primary", "background", "text", "toggle"];
 const APPEARANCE_HSL_BASE = {
   primary: { s: 0.78, l: 0.54 },
@@ -602,6 +603,7 @@ function persistAppearanceState(state) {
   localStorage.setItem(APPEARANCE_BACKGROUND_KEY, state.background);
   localStorage.setItem(APPEARANCE_TEXT_KEY, state.text);
   localStorage.setItem(APPEARANCE_TOGGLE_KEY, state.toggle);
+  savedAppearanceState = { ...state };
 }
 
 function clearAppearanceStorage() {
@@ -641,10 +643,6 @@ function applyAppearancePalette(state, { persist = false } = {}) {
   APPEARANCE_KEYS.forEach(key => syncGridStateFromColor(key, palette[key]));
   if (persist) {
     persistAppearanceState(palette);
-    const hintEl = qs("#appearance-hint");
-    if (hintEl) {
-      hintEl.textContent = "Appearance preferences saved.";
-    }
   }
   return palette;
 }
@@ -757,6 +755,7 @@ function initAppearanceControls() {
   }
   applyAppearancePalette(currentAppearanceState, { persist: false });
   updateAppearanceInputs(currentAppearanceState);
+  savedAppearanceState = { ...currentAppearanceState };
   qsa("[data-show-appearance-picker]").forEach(button => {
     const key = button.dataset.showAppearancePicker;
     button.addEventListener("click", () => openColorPickerModal(key));
@@ -838,18 +837,41 @@ function initAppearanceControls() {
     }
   });
   qs("#save-appearance-settings")?.addEventListener("click", () => {
+    const previousAppearanceState = { ...savedAppearanceState };
     applyAppearancePalette(currentAppearanceState, { persist: true });
     updateAppearanceInputs(currentAppearanceState);
+    showActionSnackbar({
+      message: "Appearance preferences saved.",
+      instructionLabel: "Undo change",
+      onAction: () => {
+        currentAppearanceState = { ...previousAppearanceState };
+        applyAppearancePalette(currentAppearanceState, { persist: true });
+        updateAppearanceInputs(currentAppearanceState);
+        showDefaultToast("Appearance reverted to previous colors.");
+      }
+    });
   });
   qs("#reset-appearance-settings")?.addEventListener("click", () => {
+    const previousAppearanceState = { ...savedAppearanceState };
     currentAppearanceState = { ...DEFAULT_APPEARANCE };
     applyAppearancePalette(currentAppearanceState, { persist: false });
     clearAppearanceStorage();
     updateAppearanceInputs(currentAppearanceState);
+    savedAppearanceState = { ...DEFAULT_APPEARANCE };
     const hintEl = qs("#appearance-hint");
     if (hintEl) {
-      hintEl.textContent = "Appearance reverted to defaults.";
+      hintEl.textContent = APPEARANCE_HINT_DEFAULT;
     }
+    showActionSnackbar({
+      message: "Appearance reverted to defaults.",
+      instructionLabel: "Undo change",
+      onAction: () => {
+        currentAppearanceState = { ...previousAppearanceState };
+        applyAppearancePalette(currentAppearanceState, { persist: true });
+        updateAppearanceInputs(currentAppearanceState);
+        showDefaultToast("Appearance restored.");
+      }
+    });
   });
 }
 
@@ -950,10 +972,6 @@ function renderGalleryCategories() {
   populateGalleryCategoryMotherFormSelect();
   renderGalleryCategoryTable();
   updateGalleryPhotoCategorySelect();
-  const statusMessage = GALLERY_CATEGORIES.length
-    ? `${GALLERY_CATEGORIES.length} categories available`
-    : "No categories available yet.";
-  setGalleryStatus(statusMessage, false);
 }
 
 function populateGalleryCategoryMotherFormSelect() {
@@ -1061,9 +1079,14 @@ async function updateGalleryCategoryNameInline(categoryId, inputEl, motherSelect
   if (!categoryId) {
     return;
   }
+  const category = GALLERY_CATEGORIES.find(c => c.id === categoryId);
+  const previousState = {
+    name: category?.name || "",
+    motherCategoryId: category?.motherCategoryId ?? null
+  };
   const trimmedName = (inputEl?.value ?? "").trim();
   if (!trimmedName) {
-    setGalleryStatus("Category name is required.", true);
+    showErrorSnackbar({ message: "Category name is required." });
     inputEl?.focus();
     return;
   }
@@ -1079,12 +1102,18 @@ async function updateGalleryCategoryNameInline(categoryId, inputEl, motherSelect
     const result = await sendGalleryRequest(payload);
     const successMessage = result?.message || "Category updated successfully.";
     await reloadGalleryData();
-    setGalleryStatus(successMessage, false);
+    const categoryLabel = getCategoryLabel({ id: categoryId, name: trimmedName });
+    showActionSnackbar({
+      message: successMessage,
+      instructionLabel: "Undo change",
+      onAction: () => {
+        void undoGalleryCategoryUpdate(categoryId, previousState, categoryLabel);
+      }
+    });
   } catch (error) {
-    setGalleryStatus(
-      error?.message || "Failed to update category.",
-      true
-    );
+    showErrorSnackbar({
+      message: error?.message || "Failed to update category."
+    });
   } finally {
     triggerButton?.removeAttribute("disabled");
   }
@@ -1389,15 +1418,6 @@ function formatGalleryPhotoDate(rawValue) {
   }).format(parsed);
 }
 
-function setGalleryStatus(message, isError = false) {
-  const statusEl = qs("#gallery-category-status");
-  if (!statusEl) {
-    return;
-  }
-  statusEl.textContent = message;
-  statusEl.classList.toggle("error", Boolean(isError));
-}
-
 function resetGalleryCategoryForm() {
   const nameInput = qs("#gallery-category-name");
   if (nameInput) {
@@ -1434,16 +1454,31 @@ async function deleteGalleryCategoryById(category) {
   if (!confirmed) {
     return;
   }
-    try {
-      await sendGalleryRequest({
-        action: "delete_gallery_category",
-        id: category.id
-      });
-      setGalleryStatus("Category deleted successfully.", false);
-      await reloadGalleryData();
-      resetGalleryCategoryForm();
+  const categoryUndoCache = {
+    name: category.name || "",
+    motherCategoryId: Number.isFinite(category?.motherCategoryId)
+      ? category.motherCategoryId
+      : null
+  };
+  try {
+    await sendGalleryRequest({
+      action: "delete_gallery_category",
+      id: category.id
+    });
+    await reloadGalleryData();
+    resetGalleryCategoryForm();
+    const categoryLabel = getCategoryLabel(category);
+    showActionSnackbar({
+      message: `${categoryLabel} deleted.`,
+      instructionLabel: "Undo delete",
+      onAction: () => {
+        void restoreGalleryCategoryFromUndoCache(categoryUndoCache);
+      }
+    });
   } catch (err) {
-    setGalleryStatus(err.message || "Failed to delete category.", true);
+    showErrorSnackbar({
+      message: err.message || "Failed to delete category."
+    });
   }
 }
 
@@ -1524,14 +1559,50 @@ async function syncUserToBackend(action, payload) {
 // Persists panel settings changes to the backend store for the next load.
 async function syncSettings(payload) {
   try {
-    await fetch(API_ENDPOINT, {
+    const response = await fetch(API_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "save_settings", settings: payload })
     });
+    if (!response.ok) {
+      console.warn("Failed to sync settings to backend:", response.statusText);
+      return false;
+    }
+    return true;
   } catch (err) {
     console.warn("Failed to sync settings to backend:", err);
+    return false;
   }
+}
+
+async function sendAccountAction(action, payload = {}) {
+  if (!action) {
+    throw new Error("Missing account action.");
+  }
+  const body = { action, ...payload };
+  let response;
+  try {
+    response = await fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    throw new Error("Unable to reach the server.");
+  }
+  let data = {};
+  try {
+    data = await response.json();
+  } catch {
+    data = {};
+  }
+  if (!response.ok || data.status === "error") {
+    throw new Error(data.message || "Unable to save account information.");
+  }
+  return data;
 }
 
 const DEFAULT_TOAST_DURATION = 5000;
@@ -1759,10 +1830,11 @@ function showActionSnackbar({
   const progressBar = document.createElement("span");
   progressBar.className = "default-snackbar__progress-bar";
   progressBar.style.animation = `default-toast-progress ${duration}ms linear forwards`;
+  progressBar.style.animationPlayState = "running";
   progress.appendChild(progressBar);
   snackbar.appendChild(progress);
 
-  root.insertBefore(snackbar, root.firstChild);
+  root.appendChild(snackbar);
   requestAnimationFrame(() => {
     snackbar.classList.add("default-snackbar--visible");
     progressBar.style.transform = "scaleX(0)";
@@ -1861,6 +1933,87 @@ function showActionSnackbar({
   };
 }
 
+function showErrorSnackbar({ message, duration = DEFAULT_TOAST_DURATION } = {}) {
+  if (!message) {
+    return null;
+  }
+  const root = ensureDefaultSnackbarRoot();
+  if (!root) {
+    return null;
+  }
+  const snackbar = document.createElement("div");
+  snackbar.className = "default-snackbar default-snackbar--error";
+  snackbar.setAttribute("role", "alert");
+  snackbar.setAttribute("dir", "rtl");
+  snackbar.tabIndex = 0;
+
+  const messageNode = document.createElement("div");
+  messageNode.className = "default-snackbar__content";
+  messageNode.textContent = String(message);
+  snackbar.appendChild(messageNode);
+
+  const progress = document.createElement("div");
+  progress.className = "default-snackbar__progress";
+  const progressBar = document.createElement("span");
+  progressBar.className = "default-snackbar__progress-bar";
+  progressBar.style.animation = `default-toast-progress ${duration}ms linear forwards`;
+  progress.appendChild(progressBar);
+  snackbar.appendChild(progress);
+
+  root.appendChild(snackbar);
+  requestAnimationFrame(() => {
+    snackbar.classList.add("default-snackbar--visible");
+    progressBar.style.transform = "scaleX(0)";
+  });
+
+  let remaining = duration;
+  let timerStart = performance.now();
+  let dismissTimer = window.setTimeout(dismiss, remaining);
+  let paused = false;
+
+  function dismiss() {
+    if (!snackbar.parentElement) {
+      return;
+    }
+    clearTimeout(dismissTimer);
+    snackbar.classList.remove("default-snackbar--visible");
+    snackbar.addEventListener(
+      "transitionend",
+      (event) => {
+        if (event.propertyName === "opacity" || event.propertyName === "transform") {
+          snackbar.remove();
+        }
+      },
+      { once: true }
+    );
+  }
+
+  snackbar.addEventListener("click", dismiss);
+  snackbar.addEventListener("mouseenter", () => {
+    if (paused || remaining <= 0) {
+      return;
+    }
+    paused = true;
+    clearTimeout(dismissTimer);
+    const elapsed = performance.now() - timerStart;
+    remaining = Math.max(0, remaining - elapsed);
+    progressBar.style.animationPlayState = "paused";
+  });
+  snackbar.addEventListener("mouseleave", () => {
+    if (!paused || remaining <= 0) {
+      return;
+    }
+    paused = false;
+    timerStart = performance.now();
+    dismissTimer = window.setTimeout(dismiss, remaining);
+    progressBar.style.animationPlayState = "running";
+  });
+
+  return {
+    dismiss
+  };
+}
+
 function qs(sel, root = document) { return root.querySelector(sel); }
 function qsa(sel, root = document) { return [...root.querySelectorAll(sel)]; }
 
@@ -1915,18 +2068,6 @@ function updatePhotoUploaderPreview(uploader) {
   }
 }
 
-function setGalleryPhotoMessage(form, message, isError = false) {
-  if (!form) {
-    return;
-  }
-  const msg = qs("[data-gallery-photo-msg]", form);
-  if (!msg) {
-    return;
-  }
-  msg.textContent = message;
-  msg.classList.toggle("error", Boolean(isError));
-}
-
 let galleryUploadModalElement;
 let galleryUploadModalFormElement;
 let galleryUploadModalUploader;
@@ -1940,7 +2081,6 @@ function openGalleryUploadModal() {
   if (galleryUploadModalFormElement) {
     galleryUploadModalFormElement.reset();
     updatePhotoUploaderPreview(galleryUploadModalUploader);
-    setGalleryPhotoMessage(galleryUploadModalFormElement, "", false);
     galleryUploadModalFormElement.querySelector('input[name="title"]')?.focus();
   }
 }
@@ -2041,16 +2181,35 @@ function updateSiteIconPreview(iconUrl) {
   }
 }
 
-function applySiteIconValue(value, { persist = false } = {}) {
+function applySiteIconValue(value) {
   siteIconValue = typeof value === "string" ? value.trim() : "";
   const iconUrl = normalizeSiteIconHref(siteIconValue);
   updateSiteIconPreview(iconUrl);
   updateSidebarLogoIcon(iconUrl);
   updateFaviconLink(iconUrl);
-  if (persist) {
-    SERVER_SETTINGS.siteIcon = siteIconValue;
-    syncSettings({ siteIcon: siteIconValue });
-  }
+}
+
+function persistSiteIconChange(nextIcon, successMessage) {
+  const previousIcon = siteIconValue;
+  applySiteIconValue(nextIcon);
+  SERVER_SETTINGS.siteIcon = nextIcon;
+  void syncSettings({ siteIcon: nextIcon }).then(success => {
+    if (success) {
+      showActionSnackbar({
+        message: successMessage,
+        instructionLabel: "Undo change",
+        onAction: () => {
+          applySiteIconValue(previousIcon);
+          SERVER_SETTINGS.siteIcon = previousIcon;
+          void syncSettings({ siteIcon: previousIcon });
+        }
+      });
+    } else {
+      applySiteIconValue(previousIcon);
+      SERVER_SETTINGS.siteIcon = previousIcon;
+      showErrorSnackbar({ message: "Failed to save site icon." });
+    }
+  });
 }
 
 function findGalleryPhotoMatchingSiteIcon() {
@@ -2067,16 +2226,11 @@ function findGalleryPhotoMatchingSiteIcon() {
   });
 }
 
-function setGalleryPhotoModalMessage(message, isError = false) {
-  setGalleryPhotoMessage(galleryPhotoModalFormElement, message, isError);
-}
-
 function openGalleryPhotoModal(photo) {
   if (!photo || !galleryPhotoModalElement || !galleryPhotoModalFormElement) {
     return;
   }
   galleryModalActivePhotoId = photo.id;
-  setGalleryPhotoModalMessage("", false);
   const photoUrl = getGalleryPhotoFileUrl(photo);
   if (galleryPhotoModalImageElement) {
     galleryPhotoModalImageElement.src = photoUrl;
@@ -2112,11 +2266,40 @@ function closeGalleryPhotoModal() {
   galleryModalActivePhotoId = 0;
   galleryPhotoModalElement.classList.add("hidden");
   galleryPhotoModalElement.setAttribute("aria-hidden", "true");
-  setGalleryPhotoModalMessage("", false);
   galleryPhotoModalFormElement?.reset();
   if (galleryPhotoModalReplaceInput) {
     galleryPhotoModalReplaceInput.value = "";
   }
+}
+
+function initGalleryPhotoModalKeyboardShortcuts() {
+  document.addEventListener("keydown", (event) => {
+    if (
+      !galleryPhotoModalElement ||
+      galleryPhotoModalElement.classList.contains("hidden")
+    ) {
+      return;
+    }
+    const target = event.target;
+    const isInput =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      (target && target.isContentEditable);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeGalleryPhotoModal();
+      return;
+    }
+    if (event.key === "Delete" && !isInput) {
+      event.preventDefault();
+      galleryPhotoModalDeleteButton?.click();
+      return;
+    }
+    if (event.key === "Enter" && !isInput) {
+      event.preventDefault();
+      galleryPhotoModalSaveButton?.click();
+    }
+  });
 }
 
 async function sendGalleryFormRequest(formData) {
@@ -2144,7 +2327,7 @@ async function handleGalleryPhotoModalSave(event) {
   const title = (galleryPhotoModalTitleInput?.value ?? "").trim();
   const alt = (galleryPhotoModalAltInput?.value ?? "").trim();
   if (!title) {
-    setGalleryPhotoModalMessage("Photo title is required.", true);
+    showErrorSnackbar({ message: "Photo title is required." });
     galleryPhotoModalTitleInput?.focus();
     return;
   }
@@ -2154,7 +2337,14 @@ async function handleGalleryPhotoModalSave(event) {
     Number.isFinite(parsedCategoryId) && parsedCategoryId > 0
       ? parsedCategoryId
       : null;
-  setGalleryPhotoModalMessage("Saving photo...", false);
+  const previousPhoto = GALLERY_PHOTOS.find(p => p.id === galleryModalActivePhotoId);
+  const previousSnapshot = previousPhoto
+    ? {
+        title: previousPhoto.title || "",
+        altText: previousPhoto.altText || "",
+        categoryId: previousPhoto.categoryId ?? null
+      }
+    : null;
   galleryPhotoModalSaveButton?.setAttribute("disabled", "disabled");
   try {
     await sendGalleryRequest({
@@ -2164,7 +2354,6 @@ async function handleGalleryPhotoModalSave(event) {
       alt_text: alt,
       category_id: normalizedCategoryId
     });
-    setGalleryPhotoModalMessage("Photo details updated.", false);
     await reloadGalleryData();
     const refreshedPhoto = GALLERY_PHOTOS.find(p => p.id === galleryModalActivePhotoId);
     if (refreshedPhoto) {
@@ -2172,11 +2361,17 @@ async function handleGalleryPhotoModalSave(event) {
     } else {
       closeGalleryPhotoModal();
     }
+    showActionSnackbar({
+      message: "Photo details updated.",
+      instructionLabel: "Undo change",
+      onAction: () => {
+        void undoGalleryPhotoUpdate(galleryModalActivePhotoId, previousSnapshot);
+      }
+    });
   } catch (error) {
-    setGalleryPhotoModalMessage(
-      error?.message || "Failed to update photo.",
-      true
-    );
+    showErrorSnackbar({
+      message: error?.message || "Failed to update photo."
+    });
   } finally {
     galleryPhotoModalSaveButton?.removeAttribute("disabled");
   }
@@ -2186,7 +2381,6 @@ async function handleGalleryPhotoReplace(file) {
   if (!file || !galleryModalActivePhotoId) {
     return;
   }
-  setGalleryPhotoModalMessage("Replacing photo...", false);
   galleryPhotoModalReplaceButton?.setAttribute("disabled", "disabled");
   const formData = new FormData();
   formData.set("action", "replace_gallery_photo");
@@ -2195,18 +2389,17 @@ async function handleGalleryPhotoReplace(file) {
   try {
     await sendGalleryFormRequest(formData);
     await reloadGalleryData();
+    showDefaultToast("Photo replaced successfully.");
     const refreshedPhoto = GALLERY_PHOTOS.find(p => p.id === galleryModalActivePhotoId);
     if (refreshedPhoto) {
       openGalleryPhotoModal(refreshedPhoto);
-      setGalleryPhotoModalMessage("Photo replaced successfully.", false);
     } else {
       closeGalleryPhotoModal();
     }
   } catch (error) {
-    setGalleryPhotoModalMessage(
-      error?.message || "Failed to replace photo.",
-      true
-    );
+    showErrorSnackbar({
+      message: error?.message || "Failed to replace photo."
+    });
   } finally {
     galleryPhotoModalReplaceButton?.removeAttribute("disabled");
   }
@@ -2230,7 +2423,13 @@ async function handleGalleryPhotoDelete() {
   if (!confirmed) {
     return;
   }
-  setGalleryPhotoModalMessage("Deleting photo...", false);
+  const undoCache = {
+    title,
+    altText: photo?.altText || "",
+    categoryId: Number.isFinite(photo?.categoryId) ? photo.categoryId : null,
+    filename: photo?.filename || ""
+  };
+  undoCache.blob = await downloadGalleryPhotoBlobForUndo(photo);
   try {
     await sendGalleryRequest({
       action: "delete_gallery_photo",
@@ -2238,11 +2437,159 @@ async function handleGalleryPhotoDelete() {
     });
     closeGalleryPhotoModal();
     await reloadGalleryData();
+    showActionSnackbar({
+      message: `${title} deleted.`,
+      instructionLabel: undoCache.blob ? "Undo delete" : "Click to refresh photos",
+      onAction: undoCache.blob
+        ? () => {
+            void restoreGalleryPhotoFromUndoCache(undoCache);
+          }
+        : () => {
+            reloadGalleryData();
+          }
+    });
   } catch (error) {
-    setGalleryPhotoModalMessage(
-      error?.message || "Failed to delete photo.",
-      true
-    );
+    showErrorSnackbar({
+      message: error?.message || "Failed to delete photo."
+    });
+  }
+}
+
+async function downloadGalleryPhotoBlobForUndo(photo) {
+  if (!photo) {
+    return null;
+  }
+  const url = getGalleryPhotoFileUrl(photo);
+  if (!url) {
+    return null;
+  }
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      return null;
+    }
+    return await response.blob();
+  } catch (err) {
+    console.warn("Failed to cache gallery photo for undo:", err);
+    return null;
+  }
+}
+
+async function restoreGalleryPhotoFromUndoCache(cache) {
+  if (!cache?.blob) {
+    showErrorSnackbar({
+      message: "Unable to undo this action."
+    });
+    return;
+  }
+  const { title, altText, categoryId, filename } = cache;
+  const formData = new FormData();
+  formData.set("action", "add_gallery_photo");
+  formData.set("title", title || "");
+  formData.set("alt_text", altText || "");
+  if (typeof categoryId === "number" && categoryId > 0) {
+    formData.set("category_id", String(categoryId));
+  }
+  const fallbackName = filename ? filename.split("/").pop() : "";
+  const blobName = fallbackName || `photo-restore-${Date.now()}`;
+  formData.set("photo", cache.blob, blobName);
+  try {
+    const response = await fetch(API_ENDPOINT, { method: "POST", body: formData });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      payload = {};
+    }
+    if (!response.ok) {
+      throw new Error(payload?.message || "The server failed to restore the photo.");
+    }
+    if (payload?.status === "error") {
+      throw new Error(payload.message || "The server reported an error while restoring the photo.");
+    }
+    cache.blob = null;
+    showDefaultToast(payload?.message || "Photo restored.");
+    await reloadGalleryData();
+  } catch (error) {
+    showErrorSnackbar({
+      message: error?.message || "Failed to restore photo."
+    });
+  }
+}
+
+async function restoreGalleryCategoryFromUndoCache(cache) {
+  if (!cache?.name) {
+    showErrorSnackbar({
+      message: "Unable to undo this action."
+    });
+    return;
+  }
+  const payload = {
+    action: "add_gallery_category",
+    name: cache.name,
+    mother_category_id: cache.motherCategoryId ?? ""
+  };
+  try {
+    const result = await sendGalleryRequest(payload);
+    showDefaultToast(result?.message || "Category restored.");
+    await reloadGalleryData();
+  } catch (error) {
+    showErrorSnackbar({
+      message: error?.message || "Failed to restore category."
+    });
+  }
+}
+
+async function undoGalleryCategoryUpdate(categoryId, previousState, label) {
+  if (!categoryId || !previousState?.name) {
+    showErrorSnackbar({
+      message: "Unable to undo this change."
+    });
+    return;
+  }
+  const payload = {
+    action: "update_gallery_category",
+    id: categoryId,
+    name: previousState.name,
+    mother_category_id: previousState.motherCategoryId ?? ""
+  };
+  try {
+    const result = await sendGalleryRequest(payload);
+    await reloadGalleryData();
+    showDefaultToast(`${label || "Category"} restored.`);
+  } catch (error) {
+    showErrorSnackbar({
+      message: error?.message || "Failed to revert category."
+    });
+  }
+}
+
+async function undoGalleryPhotoUpdate(photoId, previousSnapshot) {
+  if (!photoId || !previousSnapshot) {
+    showErrorSnackbar({
+      message: "Unable to undo this change."
+    });
+    return;
+  }
+  const payload = {
+    action: "update_gallery_photo",
+    photo_id: photoId,
+    title: previousSnapshot.title || "",
+    alt_text: previousSnapshot.altText || "",
+    category_id: previousSnapshot.categoryId ?? ""
+  };
+  try {
+    await sendGalleryRequest(payload);
+    await reloadGalleryData();
+    const restoredPhoto = GALLERY_PHOTOS.find(p => p.id === photoId);
+    if (restoredPhoto) {
+      openGalleryPhotoModal(restoredPhoto);
+    }
+    showDefaultToast("Changes reverted.");
+  } catch (error) {
+    showErrorSnackbar({
+      message: error?.message || "Failed to revert photo."
+    });
   }
 }
 
@@ -2403,10 +2750,22 @@ function confirmUserDeletion() {
   }
   const index = USER_DB.findIndex(u => (u.code ?? '') === deletingUserCode);
   if (index >= 0) {
+    const removedUser = { ...USER_DB[index] };
     USER_DB.splice(index, 1);
     renderUsers();
     updateKpis();
     syncUserToBackend('delete_user', { code: deletingUserCode });
+    showActionSnackbar({
+      message: `${removedUser.fullname || removedUser.username || 'User'} deleted.`,
+      onAction: () => {
+        const insertPos = Math.min(index, USER_DB.length);
+        USER_DB.splice(insertPos, 0, removedUser);
+        renderUsers();
+        updateKpis();
+        showDefaultToast('User restored.');
+        syncUserToBackend('add_user', removedUser);
+      }
+    });
   }
   closeDeleteModal();
 }
@@ -2483,7 +2842,26 @@ function showDialog(message, opts = {}){
   if (opts.okText) okBtn.textContent = opts.okText;
   if (opts.cancelText) cancelBtn.textContent = opts.cancelText;
   return new Promise((resolve) => {
+    const handleKey = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close(false);
+        return;
+      }
+      if (event.key === "Enter") {
+        if (
+          event.target instanceof HTMLInputElement ||
+          event.target instanceof HTMLTextAreaElement ||
+          (event.target && event.target.isContentEditable)
+        ) {
+          return;
+        }
+        event.preventDefault();
+        close(true);
+      }
+    };
     const close = (result) => {
+      document.removeEventListener("keydown", handleKey);
       modal.classList.add('hidden');
       okBtn.onclick = null;
       cancelBtn.onclick = null;
@@ -2491,6 +2869,7 @@ function showDialog(message, opts = {}){
     };
     okBtn.onclick = () => close(true);
     cancelBtn.onclick = () => close(false);
+    document.addEventListener("keydown", handleKey);
     modal.classList.remove('hidden');
     if (!opts.confirm) cancelBtn.classList.add('hidden'); else cancelBtn.classList.remove('hidden');
   });
@@ -2589,6 +2968,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       setActiveTab(tab);
     }
   });
+  qsa('[data-go-home]').forEach(button => {
+    button.addEventListener('click', () => {
+      setActiveTab('home');
+      button.blur();
+    });
+  });
 
   renderClock();
   setInterval(renderClock, 1000);
@@ -2652,6 +3037,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (editingUserCode) {
       const index = USER_DB.findIndex(u => u.code === editingUserCode);
       if (index >= 0) {
+        const previousUser = { ...USER_DB[index] };
         USER_DB[index] = {
           ...USER_DB[index],
           username,
@@ -2666,10 +3052,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderUsers();
         updateKpis();
         closeUserModal();
+        showDefaultToast('User updated successfully.');
+        showActionSnackbar({
+          message: 'User changes saved.',
+          onAction: () => {
+            USER_DB[index] = previousUser;
+            renderUsers();
+            updateKpis();
+            syncUserToBackend('update_user', previousUser);
+            showDefaultToast('Changes reverted.');
+          }
+        });
         syncUserToBackend('update_user', payload);
         return;
       }
-      msg.textContent = 'User not found.'; return;
+      msg.textContent = 'User not found.';
+      showDefaultToast('User not found.');
+      return;
     }
     const newUser = {
       ...payload,
@@ -2681,11 +3080,102 @@ document.addEventListener('DOMContentLoaded', async () => {
     renderUsers();
     updateKpis();
     closeUserModal();
+    showDefaultToast('User added successfully.');
     syncUserToBackend('add_user', newUser);
   });
   // Delete modal buttons drive the confirm/cancel flow.
   qs('#user-delete-cancel')?.addEventListener('click', closeDeleteModal);
   qs('#user-delete-confirm')?.addEventListener('click', confirmUserDeletion);
+
+  const personalInfoForm = qs('#personal-info-form');
+  const personalFullnameInput = qs('#personal-fullname');
+  let personalInfoLastFullname = (personalFullnameInput?.value ?? '').trim();
+  personalInfoForm?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const nextFullname = (personalFullnameInput?.value ?? '').trim();
+    if (!nextFullname) {
+      const errMsg = 'Full name is required.';
+      showDefaultToast(errMsg);
+      return;
+    }
+    const previousFullname = personalInfoLastFullname;
+    try {
+      const result = await sendAccountAction('update_user_personal', { fullname: nextFullname });
+      personalInfoLastFullname = nextFullname;
+      const successMessage = result.message || 'Personal information saved.';
+      showActionSnackbar({
+        message: successMessage,
+        onAction: async () => {
+          try {
+            await sendAccountAction('update_user_personal', { fullname: previousFullname });
+            personalInfoLastFullname = previousFullname;
+            if (personalFullnameInput) {
+              personalFullnameInput.value = previousFullname;
+            }
+            const revertMessage = 'Changes reverted.';
+            showDefaultToast(revertMessage);
+          } catch (revertError) {
+            const revertMsg = revertError?.message || 'Unable to revert changes.';
+            showDefaultToast(revertMsg);
+          }
+        }
+      });
+    } catch (error) {
+      const errMsg = error?.message || 'Failed to save personal information.';
+      showDefaultToast(errMsg);
+    }
+  });
+
+  const accountInfoForm = qs('#account-info-form');
+  accountInfoForm?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const username = (qs('#account-username')?.value ?? '').trim();
+    const phone = (qs('#account-phone')?.value ?? '').trim();
+    const email = (qs('#account-email')?.value ?? '').trim();
+    try {
+      const result = await sendAccountAction('update_user_account', { username, phone, email });
+      const successMessage = result.message || 'Account information updated.';
+      showDefaultToast(successMessage);
+    } catch (error) {
+      const errMsg = error?.message || 'Failed to save account information.';
+      showDefaultToast(errMsg);
+    }
+  });
+
+  const privacyForm = qs('#privacy-form');
+  privacyForm?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const currentPassword = qs('#current-password')?.value ?? '';
+    const newPassword = qs('#new-password')?.value ?? '';
+    const confirmPassword = qs('#confirm-password')?.value ?? '';
+    if (!newPassword || !confirmPassword) {
+      showErrorSnackbar({
+        message: 'لطفاً رمز عبور جدید و تکرار آن را وارد کنید.',
+        duration: DEFAULT_TOAST_DURATION
+      });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      showErrorSnackbar({
+        message: 'رمز عبور جدید با تکرار آن مطابقت ندارد.',
+        duration: DEFAULT_TOAST_DURATION
+      });
+      return;
+    }
+    try {
+      const result = await sendAccountAction('update_user_password', {
+        current_password: currentPassword,
+        new_password: newPassword,
+        confirm_password: confirmPassword
+      });
+      privacyForm.reset();
+      const successMessage = result.message || 'Password updated successfully.';
+      showDefaultToast(successMessage);
+    } catch (error) {
+      const errMsg = error?.message || 'Failed to update password.';
+      showErrorSnackbar({ message: errMsg, duration: DEFAULT_TOAST_DURATION });
+    }
+  });
 
   const panelInput = qs('#dev-panel-name');
   const panelSaveBtn = qs('#save-panel-settings');
@@ -2697,11 +3187,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   applyPanelTitle(initialPanel, true);
   panelSaveBtn?.addEventListener('click', () => {
+    const previousPanelName =
+      qs('.sidebar .title')?.textContent?.trim() ||
+      PANEL_TITLE_DEFAULT;
     const value = (panelInput?.value ?? '').trim();
     const panelName = value || PANEL_TITLE_DEFAULT;
     applyPanelTitle(panelName, true);
     SERVER_SETTINGS.panelName = panelName;
-    syncSettings({ panelName });
+    void syncSettings({ panelName }).then(success => {
+      if (success) {
+        showActionSnackbar({
+          message: "Panel title updated.",
+          instructionLabel: "Undo change",
+          onAction: () => {
+            applyPanelTitle(previousPanelName, true);
+            SERVER_SETTINGS.panelName = previousPanelName;
+            void syncSettings({ panelName: previousPanelName });
+          }
+        });
+      } else {
+        applyPanelTitle(previousPanelName, true);
+        SERVER_SETTINGS.panelName = previousPanelName;
+        showErrorSnackbar({ message: "Failed to save panel title." });
+      }
+    });
   });
 
   populateTimezoneSelect();
@@ -2713,7 +3222,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   siteIconPlaceholder = qs('[data-site-icon-placeholder]');
   siteIconAddButton = qs('[data-open-photo-chooser]');
   siteIconClearButton = qs('[data-clear-site-icon]');
-  applySiteIconValue(SERVER_SETTINGS.siteIcon ?? "", { persist: false });
+  applySiteIconValue(SERVER_SETTINGS.siteIcon ?? "");
   siteIconAddButton?.addEventListener('click', () => {
     const activePhoto = findGalleryPhotoMatchingSiteIcon();
     const initialSelection = activePhoto ? [activePhoto.id] : [];
@@ -2726,23 +3235,48 @@ document.addEventListener('DOMContentLoaded', async () => {
           return;
         }
         const filename = normalizeValue(photo.filename);
-        applySiteIconValue(filename, { persist: true });
+        persistSiteIconChange(filename, "Site icon saved.");
       }
     });
   });
   siteIconClearButton?.addEventListener('click', () => {
-    applySiteIconValue("", { persist: true });
+    persistSiteIconChange("", "Site icon removed.");
   });
   const generalSaveBtn = qs('#save-general-settings');
   const timezoneSelect = qs('#timezone-select');
   generalSaveBtn?.addEventListener('click', () => {
+    const previousTimezone = SERVER_SETTINGS.timezone || DEFAULT_SETTINGS.timezone;
     const timezoneValue = timezoneSelect?.value || DEFAULT_SETTINGS.timezone;
     if (timezoneSelect) {
       localStorage.setItem(TIMEZONE_KEY, timezoneValue);
     }
     SERVER_SETTINGS.timezone = timezoneValue;
     renderClock();
-    syncSettings({ timezone: timezoneValue });
+    void syncSettings({ timezone: timezoneValue }).then(success => {
+      if (success) {
+        showActionSnackbar({
+          message: "Timezone saved.",
+          instructionLabel: "Undo change",
+          onAction: () => {
+            SERVER_SETTINGS.timezone = previousTimezone;
+            if (timezoneSelect) {
+              timezoneSelect.value = previousTimezone;
+            }
+            localStorage.setItem(TIMEZONE_KEY, previousTimezone);
+            renderClock();
+            void syncSettings({ timezone: previousTimezone });
+          }
+        });
+      } else {
+        SERVER_SETTINGS.timezone = previousTimezone;
+        if (timezoneSelect) {
+          timezoneSelect.value = previousTimezone;
+        }
+        localStorage.setItem(TIMEZONE_KEY, previousTimezone);
+        renderClock();
+        showErrorSnackbar({ message: "Failed to save timezone." });
+      }
+    });
   });
   const galleryPhotoForms = qsa('[data-gallery-photo-form]');
   galleryPhotoModalElement = qs('#gallery-photo-modal');
@@ -2870,12 +3404,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       const uploader = qs('[data-photo-uploader="gallery"]', form);
       const fileInput = qs('[data-photo-input]', uploader ?? form);
       if (!fileInput || !fileInput.files?.length) {
-        setGalleryPhotoMessage(form, 'Please select a photo first.', true);
+        showErrorSnackbar({ message: 'Please select a photo first.' });
         return;
       }
       const submitButton = qs('button[type="submit"]', form);
       submitButton?.setAttribute('disabled', 'disabled');
-      setGalleryPhotoMessage(form, 'Uploading photo...', false);
       const formData = new FormData(form);
       formData.set('action', 'add_gallery_photo');
       try {
@@ -2897,7 +3430,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (uploader) {
           updatePhotoUploaderPreview(uploader);
         }
-        setGalleryPhotoMessage(form, successMessage, false);
+        showDefaultToast(successMessage);
         await reloadGalleryData();
         if (photoChooserReopenContext) {
           const latestPhoto = GALLERY_PHOTOS[0];
@@ -2912,13 +3445,12 @@ document.addEventListener('DOMContentLoaded', async () => {
           });
         }
       } catch (error) {
-        setGalleryPhotoMessage(
-          form,
-          error && typeof error.message === 'string'
-            ? error.message
-            : 'Failed to upload photo.',
-          true
-        );
+        showErrorSnackbar({
+          message:
+            error && typeof error.message === 'string'
+              ? error.message
+              : 'Failed to upload photo.'
+        });
       } finally {
         submitButton?.removeAttribute('disabled');
       }
@@ -2931,7 +3463,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const name = (input?.value ?? '').trim();
     const motherValue = (motherSelect?.value ?? '').trim();
     if (!name) {
-      setGalleryStatus('Category name is required.', true);
+      showErrorSnackbar({ message: 'Category name is required.' });
       return;
     }
     const payload = {
@@ -2939,20 +3471,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       name,
       mother_category_id: motherValue
     };
-    setGalleryStatus('Saving category...', false);
     galleryCategorySubmitButton?.setAttribute('disabled', 'disabled');
     try {
       const result = await sendGalleryRequest(payload);
       const successMessage =
         result.message || 'Category saved successfully.';
-      setGalleryStatus(successMessage, false);
+      showDefaultToast(successMessage);
       resetGalleryCategoryForm();
       await reloadGalleryData();
     } catch (error) {
-      setGalleryStatus(
-        error.message || 'Failed to save category.',
-        true
-      );
+      showErrorSnackbar({
+        message: error?.message || 'Failed to save category.'
+      });
     } finally {
       galleryCategorySubmitButton?.removeAttribute('disabled');
     }
@@ -2986,6 +3516,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       closeGalleryPhotoModal();
     }
   });
+  initGalleryPhotoModalKeyboardShortcuts();
   galleryPhotoModalFormElement?.addEventListener('submit', handleGalleryPhotoModalSave);
   galleryPhotoModalReplaceButton?.addEventListener('click', () => {
     galleryPhotoModalReplaceInput?.click();
@@ -3015,6 +3546,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       onAction: () => {
         showDefaultToast('بازگشت انجام شد.', { duration: 2500 });
       }
+    });
+  });
+
+  const testErrorSnackbarTrigger = qs('[data-test-error-snackbar]');
+  testErrorSnackbarTrigger?.addEventListener('click', () => {
+    showErrorSnackbar({
+      message: 'عملیات با خطا مواجه شد. لطفاً دوباره تلاش کنید.',
+      duration: DEFAULT_TOAST_DURATION
     });
   });
 

@@ -1258,10 +1258,10 @@ input[type=number] { -moz-appearance: textfield; }
   bottom: 14px;
   z-index: 2700;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
   gap: 10px;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   pointer-events: none;
   padding: 0 16px;
 }
@@ -1279,9 +1279,16 @@ input[type=number] { -moz-appearance: textfield; }
   direction: rtl;
   text-align: right;
   pointer-events: auto;
+  cursor: pointer;
   opacity: 0;
   transform: translateY(12px);
   transition: opacity 0.32s ease, transform 0.32s ease;
+}
+.default-snackbar--error {
+  background: #fff3f3;
+  border-color: rgba(225, 29, 46, 0.45);
+  color: #7f1d1d;
+  box-shadow: 0 20px 40px rgba(225, 29, 46, 0.25);
 }
 .default-snackbar--visible {
   opacity: 1;

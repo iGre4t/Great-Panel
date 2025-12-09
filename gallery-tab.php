@@ -83,7 +83,6 @@
             <div class="modal-actions">
               <button type="submit" class="btn primary">Upload photo</button>
             </div>
-            <p data-gallery-photo-msg class="hint"></p>
           </form>
         </div>
       </div>
@@ -113,7 +112,6 @@
           <div class="section-header">
             <h3>Saved categories</h3>
           </div>
-          <p id="gallery-category-status" class="hint"></p>
           <div class="gallery-category-table">
             <table>
               <thead>

@@ -31,25 +31,14 @@
         },
         {
             "code": "000004",
-            "username": "000004",
+            "username": "dehghani",
             "name": "مهدی دهقانی",
             "phone": "09122414561",
             "work_id": "4342232",
             "id_number": "2345674567",
+            "email": "dehghani@mci.ir",
             "active": true,
-            "createdAt": 1764755387,
-            "email": "dehghani@mci.ir"
-        },
-        {
-            "code": "000005",
-            "username": "yasi",
-            "name": "یاسمن ارشدی",
-            "phone": "09362329182",
-            "work_id": "12345",
-            "id_number": "6650065714",
-            "email": "yasamanarshadi1429@gmail.com",
-            "active": true,
-            "createdAt": 1764778910
+            "createdAt": 1765190636
         }
     ],
     "branches": [
@@ -84,6 +73,6 @@
         "title": "Great Panel2",
         "timezone": "Asia\/Tehran",
         "panelName": "Great Panel",
-        "siteIcon": "uploads\/gallery\/gallery-69309ec5cc5647.53184842.svg"
+        "siteIcon": ""
     }
 }
