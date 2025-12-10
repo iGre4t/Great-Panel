@@ -145,6 +145,7 @@ input::placeholder, textarea::placeholder { font-family: inherit; }
 .muted { color: var(--muted); }
 
 .form { display: grid; gap: 14px; }
+.form.single-column { grid-template-columns: 1fr; }
 .field { display: grid; gap: 6px; }
 /* Keep compact fields from spanning the whole card on large screens. */
 .field.standard-width {
@@ -167,6 +168,22 @@ input[type="text"], input[type="password"], input[type="email"], input[type="sea
   font-size: 15px;
   outline: none;
 }
+.numeric-field,
+input[type="number"] {
+  appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 15px;
+  outline: none;
+  background: #fff;
+  color: #111;
+  width: 100%;
+}
+.numeric-field {
+  direction: ltr;
+  text-align: left;
+}
 input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(225,29,46,0.12); }
 select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(225,29,46,0.12); }
 
@@ -187,8 +204,190 @@ select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(225,29,4
 .btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
 .btn.primary:hover { background: var(--primary-600); border-color: var(--primary-600); }
 .btn.ghost { background: transparent; }
+.btn.small {
+  padding: 6px 14px;
+  min-width: 90px;
+}
 
+.backup-file-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.backup-file-input {
+  display: none;
+}
+.backup-file-chosen {
+  font-size: 13px;
+  color: var(--muted);
+  flex: 1;
+}
+.backup-import-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.backup-import-control .btn {
+  min-width: 140px;
+  justify-content: center;
+}
+.btn.full-width {
+  width: 100%;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.backup-actions {
+  direction: ltr;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.backup-actions button {
+  min-width: 70px;
+  padding: 6px 14px;
+}
 .hint { margin: 6px 0 0; font-size: 12px; color: var(--muted); text-align: center; }
+
+/* SQL console styles */
+.sql-editor {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  background: #fff;
+  font-family: "Segoe UI", "Fira Code", "Consolas", "SFMono-Regular", Menlo, Monaco, monospace;
+  font-size: 15px;
+  line-height: 1.4;
+  color: #111;
+  min-height: 220px;
+  resize: vertical;
+  box-shadow: inset 0 6px 15px rgba(0, 0, 0, 0.06);
+  direction: ltr;
+  text-align: left;
+}
+.sql-console-hint {
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.sql-console-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sql-console-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sql-console-actions .btn {
+  min-width: 140px;
+  height: 44px;
+  padding: 0 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+}
+.sql-status-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.backup-history {
+  margin-top: 16px;
+}
+.backup-table-wrapper {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: auto;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+.backup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  direction: rtl;
+}
+.backup-table th,
+.backup-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+}
+.backup-table th {
+  background: #fafafa;
+  color: var(--muted);
+  font-weight: 600;
+}
+.backup-table tbody tr:hover {
+  background: #fff5f6;
+}
+.backup-table__empty {
+  text-align: center;
+  font-style: italic;
+}
+#backup-history {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.backup-history-hint {
+  text-align: right;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+#dev-db-backup-file {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 15px;
+  background: #fff;
+}
+
+.sql-result {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  width: 100%;
+}
+.sql-result-table-wrapper {
+  overflow-x: auto;
+  margin-top: 8px;
+}
+.sql-result-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.sql-result-table th,
+.sql-result-table td {
+  border: 1px solid rgba(0, 0, 0, 0.09);
+  padding: 8px 10px;
+  text-align: left;
+}
+.sql-result-table th {
+  background: #fff0f0;
+  font-weight: 700;
+}
+.sql-result-limit {
+  margin-top: 8px;
+}
+@media (max-width: 768px) {
+  .sql-console-footer {
+    align-items: flex-start;
+  }
+}
 
 /* Appearance controls */
 .appearance-grid {
@@ -1255,13 +1454,15 @@ input[type=number] { -moz-appearance: textfield; }
   position: fixed;
   left: 0;
   right: 0;
+  top: 0;
   bottom: 14px;
   z-index: 2700;
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
+  /* keep the snackbar stack anchored at the bottom so remaining cards slide down */
   gap: 10px;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: flex-end;
   pointer-events: none;
   padding: 0 16px;
 }
@@ -1289,6 +1490,9 @@ input[type=number] { -moz-appearance: textfield; }
   border-color: rgba(225, 29, 46, 0.45);
   color: #7f1d1d;
   box-shadow: 0 20px 40px rgba(225, 29, 46, 0.25);
+  position: relative;
+  overflow: hidden;
+  transition: padding 0.3s ease, box-shadow 0.3s ease;
 }
 .default-snackbar--visible {
   opacity: 1;
@@ -1298,6 +1502,34 @@ input[type=number] { -moz-appearance: textfield; }
   font-size: 0.8rem;
   color: var(--muted);
   text-align: right;
+}
+.default-snackbar--error .default-snackbar__instruction {
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: rgba(127, 29, 29, 0.85);
+  letter-spacing: 0.03em;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid rgba(127, 29, 29, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.3s ease, transform 0.3s ease, max-height 0.3s ease;
+}
+.default-snackbar--error:hover,
+.default-snackbar--error:focus-visible {
+  padding-bottom: 18px;
+  box-shadow: 0 20px 40px rgba(225, 29, 46, 0.4);
+}
+.default-snackbar--error:hover .default-snackbar__instruction,
+.default-snackbar--error:focus-visible .default-snackbar__instruction {
+  opacity: 1;
+  transform: translateY(0);
+  max-height: 32px;
 }
 .default-snackbar__content {
   display: flex;

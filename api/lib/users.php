@@ -43,6 +43,65 @@ function loadUsersFromUsersTable(PDO $pdo): array
     }, $rows));
 }
 
+function normalizeUserTableEmail(string $value): string
+{
+    $normalized = trim($value);
+    return $normalized === '' ? '' : mb_strtolower($normalized);
+}
+
+function normalizeUserTableIdNumber(string $value): string
+{
+    return preg_replace('/\D+/', '', trim($value)) ?? '';
+}
+
+function isEmailTakenInTable(PDO $pdo, string $email, string $excludeCode = ''): bool
+{
+    $normalizedEmail = normalizeUserTableEmail($email);
+    if ($normalizedEmail === '') {
+        return false;
+    }
+    $sql = 'SELECT COUNT(*) FROM `users` WHERE LOWER(`email`) = :email';
+    if ($excludeCode !== '') {
+        $sql .= ' AND `code` != :code';
+    }
+    try {
+        $stmt = $pdo->prepare($sql);
+        $params = [':email' => $normalizedEmail];
+        if ($excludeCode !== '') {
+            $params[':code'] = $excludeCode;
+        }
+        $stmt->execute($params);
+        return (int)$stmt->fetchColumn() > 0;
+    } catch (PDOException $err) {
+        error_log('Failed to check email uniqueness: ' . $err->getMessage());
+        return true;
+    }
+}
+
+function isIdNumberTakenInTable(PDO $pdo, string $idNumber, string $excludeCode = ''): bool
+{
+    $normalizedId = normalizeUserTableIdNumber($idNumber);
+    if ($normalizedId === '') {
+        return false;
+    }
+    $sql = 'SELECT COUNT(*) FROM `users` WHERE `id_number` = :id_number';
+    if ($excludeCode !== '') {
+        $sql .= ' AND `code` != :code';
+    }
+    try {
+        $stmt = $pdo->prepare($sql);
+        $params = [':id_number' => $normalizedId];
+        if ($excludeCode !== '') {
+            $params[':code'] = $excludeCode;
+        }
+        $stmt->execute($params);
+        return (int)$stmt->fetchColumn() > 0;
+    } catch (PDOException $err) {
+        error_log('Failed to check ID number uniqueness: ' . $err->getMessage());
+        return true;
+    }
+}
+
 function loadUserByCode(PDO $pdo, string $code): ?array
 {
     $code = trim($code);

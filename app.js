@@ -33,7 +33,12 @@ const PANEL_TITLE_DEFAULT = "Frontend panel";
 const DEFAULT_SETTINGS = {
   title: "Great Panel",
   timezone: "Asia/Tehran",
-  panelName: PANEL_TITLE_DEFAULT
+  panelName: PANEL_TITLE_DEFAULT,
+  backupSettings: {
+    autoIntervalMinutes: 0,
+    autoLimit: 0,
+    lastAutoBackupAt: null
+  }
 };
 const SITE_ICON_DEFAULT_DATA_URI = "data:,";
 const DEFAULT_APPEARANCE = {
@@ -117,6 +122,16 @@ let galleryThumbLoadScheduled = false;
 const galleryPendingCounts = new WeakMap();
 const galleryGridLoaderMap = new WeakMap();
 const galleryImageGridMap = new WeakMap();
+let BACKUP_ENTRIES = [];
+let backupIntervalInput = null;
+let backupLimitInput = null;
+let instantBackupButton = null;
+let backupImportInput = null;
+let backupImportTrigger = null;
+let backupFileChosen = null;
+let pendingBackupImportFile = null;
+let backupSettingsFormElement = null;
+let backupSaveButton = null;
 
 function normalizeValue(value) {
   if (value === null || value === undefined) {
@@ -408,15 +423,18 @@ async function loadServerData() {
       USER_DB = [...DEFAULT_USERS];
     }
     SERVER_DATABASE_CONNECTED = Boolean(payload.databaseConnected);
+    renderSqlRunnerStatus();
     if (payload.settings && typeof payload.settings === "object") {
       SERVER_SETTINGS = { ...SERVER_SETTINGS, ...payload.settings };
     }
     updateGalleryStateFromPayload(payload);
+    updateBackupListFromPayload(payload);
     applyServerSettings(); // Save server-provided defaults for the next session.
     SERVER_DATA_LOADED = true;
   } catch (err) {
     console.warn("Failed to load data from backend:", err);
     SERVER_DATABASE_CONNECTED = false;
+    renderSqlRunnerStatus();
     USER_DB = [...DEFAULT_USERS];
     updateGalleryStateFromPayload();
   }
@@ -429,6 +447,507 @@ function applyServerSettings() {
   if (SERVER_SETTINGS.timezone && !localStorage.getItem(TIMEZONE_KEY)) {
     localStorage.setItem(TIMEZONE_KEY, SERVER_SETTINGS.timezone);
   }
+  const incomingBackupSettings = SERVER_SETTINGS.backupSettings;
+  SERVER_SETTINGS.backupSettings =
+    incomingBackupSettings && typeof incomingBackupSettings === "object"
+      ? {
+          ...DEFAULT_SETTINGS.backupSettings,
+          ...incomingBackupSettings
+        }
+      : { ...DEFAULT_SETTINGS.backupSettings };
+  applyBackupSettingsInputs();
+}
+
+function renderSqlRunnerStatus() {
+  const statusEl = qs("#dev-sql-status");
+  if (!statusEl) {
+    return;
+  }
+  statusEl.textContent = SERVER_DATABASE_CONNECTED
+    ? "Connected to the configured database."
+    : "No active database connection.";
+}
+
+function formatBytes(value) {
+  const size = Number(value ?? 0);
+  if (!Number.isFinite(size) || size <= 0) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let count = size;
+  let index = 0;
+  while (count >= 1024 && index < units.length - 1) {
+    count /= 1024;
+    index += 1;
+  }
+  const precision = count < 10 && index > 0 ? 1 : 0;
+  return `${count.toFixed(precision)} ${units[index]}`;
+}
+
+function formatBackupTimestamp(value) {
+  if (!value) {
+    return "Unknown time";
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short"
+    }).format(parsed);
+  } catch {
+    return parsed.toLocaleString();
+  }
+}
+
+function renderBackupList(entries = []) {
+  const container = qs("#backup-history");
+  if (!container) {
+    return;
+  }
+  container.innerHTML = "";
+  const wrapper = document.createElement("div");
+  wrapper.className = "table-wrapper backup-table-wrapper";
+  const table = document.createElement("table");
+  table.className = "backup-table";
+  table.setAttribute("dir", "rtl");
+  const thead = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  ["When", "Type", "File", "Size", "Action"].forEach(text => {
+    const th = document.createElement("th");
+    th.textContent = text;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  const tbody = document.createElement("tbody");
+  if (!entries.length) {
+    const emptyRow = document.createElement("tr");
+    const emptyCell = document.createElement("td");
+    emptyCell.colSpan = 5;
+    emptyCell.className = "muted backup-table__empty";
+    emptyCell.textContent = "No backups recorded yet.";
+    emptyRow.appendChild(emptyCell);
+    tbody.appendChild(emptyRow);
+  } else {
+    entries.forEach(entry => {
+      const row = document.createElement("tr");
+      const whenCell = document.createElement("td");
+      whenCell.textContent = formatBackupTimestamp(entry.created_at);
+      const typeCell = document.createElement("td");
+      typeCell.textContent =
+        entry.type === "auto" ? "Automatic backup" : "Instant backup";
+      const fileCell = document.createElement("td");
+      fileCell.textContent = entry.filename ?? "backup.json";
+      const sizeCell = document.createElement("td");
+      sizeCell.textContent = formatBytes(entry.size ?? 0);
+      const actionCell = document.createElement("td");
+      const actionsWrapper = document.createElement("div");
+      actionsWrapper.className = "backup-actions";
+      const downloadBtn = document.createElement("button");
+      downloadBtn.type = "button";
+      downloadBtn.className = "btn ghost small";
+      downloadBtn.textContent = "Download";
+      downloadBtn.dataset.backupAction = "download";
+      downloadBtn.dataset.backupFilename = entry.filename ?? "";
+      const applyBtn = document.createElement("button");
+      applyBtn.type = "button";
+      applyBtn.className = "btn primary small";
+      applyBtn.textContent = "Apply";
+      applyBtn.dataset.backupAction = "apply";
+      applyBtn.dataset.backupFilename = entry.filename ?? "";
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "btn ghost small";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.dataset.backupAction = "delete";
+      deleteBtn.dataset.backupFilename = entry.filename ?? "";
+      actionsWrapper.append(downloadBtn, applyBtn, deleteBtn);
+      actionCell.appendChild(actionsWrapper);
+      row.appendChild(whenCell);
+      row.appendChild(typeCell);
+      row.appendChild(fileCell);
+      row.appendChild(sizeCell);
+      row.appendChild(actionCell);
+      tbody.appendChild(row);
+    });
+  }
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  wrapper.appendChild(table);
+  container.appendChild(wrapper);
+}
+
+function setBackupFileLabel(text) {
+  if (!backupFileChosen) {
+    return;
+  }
+  backupFileChosen.textContent = text || "No file selected.";
+}
+
+async function downloadBackupByFilename(filename) {
+  if (!filename) {
+    return;
+  }
+  setBackupControlsSubmitting(true);
+  try {
+    const payload = await postJsonAction({ action: "fetch_backup_file", filename });
+    triggerBackupDownload(payload.content, payload.filename, payload.mime, payload.encoding);
+    showDefaultToast(payload.message || "Backup downloaded.");
+  } catch (error) {
+    showErrorSnackbar({ message: error?.message || "Failed to download backup." });
+  } finally {
+    setBackupControlsSubmitting(false);
+  }
+}
+
+async function deleteBackupByFilename(filename) {
+  if (!filename) {
+    return;
+  }
+  const confirmed = await showDialog(
+    'Delete this backup? This cannot be undone.',
+    { confirm: true, title: 'Delete backup', okText: 'Delete', cancelText: 'Cancel' }
+  );
+  if (!confirmed) {
+    return;
+  }
+  setBackupControlsSubmitting(true);
+  try {
+    const payload = await postJsonAction({ action: "delete_backup_file", filename });
+    updateBackupListFromPayload(payload);
+    showDefaultToast(payload.message || "Backup deleted.");
+  } catch (error) {
+    showErrorSnackbar({ message: error?.message || "Failed to delete backup." });
+  } finally {
+    setBackupControlsSubmitting(false);
+  }
+}
+
+async function applyBackupByFilename(filename) {
+  if (!filename) {
+    return;
+  }
+  const confirmed = await showDialog(
+    'Applying this backup will replace the current data. Continue?',
+    { confirm: true, title: 'Apply backup', okText: 'Apply', cancelText: 'Cancel' }
+  );
+  if (!confirmed) {
+    return;
+  }
+  setBackupControlsSubmitting(true);
+  try {
+    const payload = await postJsonAction({ action: "apply_backup_by_filename", filename });
+    updateBackupListFromPayload(payload);
+    showDefaultToast(payload.message || "Backup applied.");
+    await reloadGalleryData();
+  } catch (error) {
+    showErrorSnackbar({ message: error?.message || "Failed to apply backup." });
+  } finally {
+    setBackupControlsSubmitting(false);
+  }
+}
+
+function handleBackupActionClick(event) {
+  const button = event.target instanceof HTMLElement ? event.target.closest("[data-backup-action]") : null;
+  if (!button) {
+    return;
+  }
+  const action = button.dataset.backupAction;
+  const filename = button.dataset.backupFilename ?? "";
+  if (!filename) {
+    return;
+  }
+  if (action === "download") {
+    void downloadBackupByFilename(filename);
+  } else if (action === "delete") {
+    void deleteBackupByFilename(filename);
+  } else if (action === "apply") {
+    void applyBackupByFilename(filename);
+  }
+}
+
+function updateBackupListFromPayload(payload = {}) {
+  const entries = Array.isArray(payload.backups) ? payload.backups : [];
+  BACKUP_ENTRIES = entries.slice();
+  renderBackupList(BACKUP_ENTRIES);
+}
+
+function applyBackupSettingsInputs() {
+  if (!backupIntervalInput && !backupLimitInput) {
+    return;
+  }
+  const settings = SERVER_SETTINGS.backupSettings || DEFAULT_SETTINGS.backupSettings;
+  if (backupIntervalInput) {
+    const interval =
+      typeof settings.autoIntervalMinutes === "number"
+        ? String(settings.autoIntervalMinutes)
+        : "";
+    backupIntervalInput.value = interval;
+  }
+  if (backupLimitInput) {
+    const limit =
+      typeof settings.autoLimit === "number" ? String(settings.autoLimit) : "";
+    backupLimitInput.value = limit;
+  }
+}
+
+function setBackupControlsSubmitting(isSubmitting) {
+  [instantBackupButton, backupImportTrigger, backupImportInput, backupSaveButton].forEach(control => {
+    if (!control) {
+      return;
+    }
+    control.disabled = Boolean(isSubmitting);
+  });
+}
+
+function triggerBackupDownload(content, filename, mime = "application/json", encoding) {
+  if (!content) {
+    return;
+  }
+  let blob;
+  if (encoding === "base64" && typeof content === "string") {
+    const binary = atob(content);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    blob = new Blob([bytes], { type: mime || "application/octet-stream" });
+  } else {
+    const type = mime || "application/json";
+    blob = new Blob([content], { type });
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename || `backup-${Date.now()}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function postJsonAction(body) {
+  let response;
+  try {
+    response = await fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+  } catch {
+    throw new Error("Unable to reach the server.");
+  }
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("Invalid response from server.");
+  }
+  if (!response.ok || payload?.status === "error") {
+    throw new Error(payload?.message || "Server reported an error.");
+  }
+  return payload;
+}
+
+async function handleInstantBackup() {
+  setBackupControlsSubmitting(true);
+  try {
+    const result = await postJsonAction({ action: "download_database_backup" });
+    triggerBackupDownload(result.backup, result.filename, result.mime, result.encoding);
+    if (result?.backups) {
+      updateBackupListFromPayload(result);
+    }
+    showDefaultToast(result.message || "Backup downloaded.");
+    await reloadGalleryData();
+  } catch (error) {
+    showErrorSnackbar({ message: error?.message || "Failed to download backup." });
+  } finally {
+    setBackupControlsSubmitting(false);
+  }
+}
+
+async function handleBackupImport(file) {
+  if (!file) {
+    return;
+  }
+  setBackupControlsSubmitting(true);
+  try {
+    const data = new FormData();
+    data.append("action", "import_database_backup");
+    data.append("backup", file, file.name);
+    const response = await fetch(API_ENDPOINT, {
+      method: "POST",
+      body: data
+    });
+    let payload = {};
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error("Invalid response from server.");
+    }
+    if (!response.ok || payload?.status === "error") {
+      throw new Error(payload?.message || "Failed to import the backup.");
+    }
+    showDefaultToast(payload?.message || "Backup imported.");
+    if (payload?.backups) {
+      updateBackupListFromPayload(payload);
+    }
+    if (backupImportInput) {
+      backupImportInput.value = "";
+    }
+    setBackupFileLabel("No file selected.");
+    await reloadGalleryData();
+  } catch (error) {
+    showErrorSnackbar({ message: error?.message || "Failed to import backup." });
+  } finally {
+    setBackupControlsSubmitting(false);
+  }
+}
+
+async function handleBackupSettingsSave(event) {
+  event.preventDefault();
+  const intervalValue = Number(backupIntervalInput?.value ?? "");
+  const limitValue = Number(backupLimitInput?.value ?? "");
+  const interval =
+    Number.isFinite(intervalValue) && intervalValue >= 0 ? intervalValue : 0;
+  const limit = Number.isFinite(limitValue) && limitValue >= 0 ? limitValue : 0;
+  setBackupControlsSubmitting(true);
+  try {
+    const payload = await postJsonAction({
+      action: "save_backup_settings",
+      settings: {
+        autoIntervalMinutes: interval,
+        autoLimit: limit
+      }
+    });
+    SERVER_SETTINGS.backupSettings = {
+      ...DEFAULT_SETTINGS.backupSettings,
+      ...SERVER_SETTINGS.backupSettings,
+      autoIntervalMinutes: interval,
+      autoLimit: limit
+    };
+    applyBackupSettingsInputs();
+    showDefaultToast(payload.message || "Auto-backup settings saved.");
+  } catch (error) {
+    showErrorSnackbar({
+      message: error?.message || "Failed to save auto-backup settings."
+    });
+  } finally {
+    setBackupControlsSubmitting(false);
+  }
+}
+
+function setSqlFormSubmitting(isSubmitting) {
+  const runBtn = qs("#run-sql-query");
+  const clearBtn = qs("#clear-sql-query");
+  const textarea = qs("#dev-db-sql");
+  [runBtn, clearBtn].forEach(button => {
+    if (!button) {
+      return;
+    }
+    button.disabled = Boolean(isSubmitting);
+  });
+  if (textarea) {
+    textarea.readOnly = Boolean(isSubmitting);
+  }
+}
+
+function clearSqlResult() {
+  const container = qs("#dev-sql-result");
+  if (!container) {
+    return;
+  }
+  const message = qs("[data-sql-result-message]", container);
+  const body = qs("[data-sql-result-body]", container);
+  if (message) {
+    message.textContent = "";
+  }
+  if (body) {
+    body.innerHTML = "";
+  }
+  container.classList.add("hidden");
+}
+
+function renderSqlResult(result) {
+  const container = qs("#dev-sql-result");
+  if (!container) {
+    return;
+  }
+  const messageNode = qs("[data-sql-result-message]", container);
+  const body = qs("[data-sql-result-body]", container);
+  if (!messageNode || !body) {
+    return;
+  }
+  const displayMessage = result?.message ?? "SQL query executed.";
+  messageNode.textContent = displayMessage;
+  body.innerHTML = "";
+  if (Array.isArray(result?.rows) && result.type === "select") {
+    const rows = result.rows;
+    const columns =
+      Array.isArray(result.columns) && result.columns.length
+        ? result.columns
+        : rows[0]
+        ? Object.keys(rows[0])
+        : [];
+    if (!rows.length) {
+      const empty = document.createElement("p");
+      empty.textContent = "Query returned no rows.";
+      body.appendChild(empty);
+    } else if (!columns.length) {
+      const empty = document.createElement("p");
+      empty.textContent = "Query produced no columns.";
+      body.appendChild(empty);
+    } else {
+      const wrapper = document.createElement("div");
+      wrapper.className = "sql-result-table-wrapper";
+      const table = document.createElement("table");
+      table.className = "sql-result-table";
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      columns.forEach(column => {
+        const th = document.createElement("th");
+        th.textContent = column;
+        headRow.appendChild(th);
+      });
+      thead.appendChild(headRow);
+      table.appendChild(thead);
+      const tbody = document.createElement("tbody");
+      rows.forEach(row => {
+        const tr = document.createElement("tr");
+        columns.forEach(column => {
+          const td = document.createElement("td");
+          const value = row[column];
+          td.textContent = value === null || value === undefined ? "" : String(value);
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      wrapper.appendChild(table);
+      body.appendChild(wrapper);
+      if (result.hasMore && rows.length) {
+        const notice = document.createElement("p");
+        notice.className = "muted sql-result-limit";
+        notice.textContent = `Showing first ${rows.length} rows.`;
+        body.appendChild(notice);
+      }
+    }
+  } else if (result?.type === "exec") {
+    const summary = document.createElement("p");
+    summary.className = "muted";
+    summary.textContent = `Affected rows: ${result.affectedRows ?? 0}.`;
+    body.appendChild(summary);
+  } else {
+    const note = document.createElement("p");
+    note.textContent = result?.message ?? "SQL query executed.";
+    body.appendChild(note);
+  }
+  container.classList.remove("hidden");
 }
 
 function ensureHexColor(value) {
@@ -1493,12 +2012,15 @@ async function reloadGalleryData() {
     const payload = await response.json();
     SERVER_DATABASE_CONNECTED = Boolean(payload.databaseConnected);
     updateGalleryStateFromPayload(payload);
+    updateBackupListFromPayload(payload);
     renderGalleryCategories();
     renderGalleryGrid();
     updateKpis();
+    renderSqlRunnerStatus();
   } catch (err) {
     SERVER_DATABASE_CONNECTED = false;
     console.warn("Failed to refresh gallery data:", err);
+    renderSqlRunnerStatus();
   }
 }
 
@@ -1573,6 +2095,36 @@ async function syncSettings(payload) {
     console.warn("Failed to sync settings to backend:", err);
     return false;
   }
+}
+
+async function executeSqlQuery(sql) {
+  const trimmed = (sql ?? "").trim();
+  if (trimmed === "") {
+    throw new Error("SQL query cannot be empty.");
+  }
+  let response;
+  try {
+    response = await fetch(API_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({ action: "run_sql_query", sql: trimmed })
+    });
+  } catch {
+    throw new Error("Unable to reach the server.");
+  }
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("Failed to parse server response.");
+  }
+  if (!response.ok || payload?.status === "error") {
+    throw new Error(payload?.message || "Failed to execute SQL query.");
+  }
+  return payload;
 }
 
 async function sendAccountAction(action, payload = {}) {
@@ -1715,6 +2267,7 @@ function showDefaultToast(content, { duration = DEFAULT_TOAST_DURATION } = {}) {
 
 const DEFAULT_SNACKBAR_ACTION_SHORTCUT = { key: "z", ctrlKey: true };
 const DEFAULT_SNACKBAR_ROOT_ID = "default-snackbar-root";
+const ERROR_SNACKBAR_COPY_HINT = "Click to copy error info";
 const snackbarStack = [];
 let isSnackbarShortcutBound = false;
 
@@ -1786,6 +2339,43 @@ function ensureDefaultSnackbarRoot() {
   root.className = "default-snackbar-root";
   host.appendChild(root);
   return root;
+}
+
+function fallbackCopyText(text) {
+  return new Promise((resolve, reject) => {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    textarea.style.top = "-9999px";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    let successful = false;
+    try {
+      successful = document.execCommand("copy");
+    } catch (error) {
+      textarea.remove();
+      return reject(error);
+    }
+    textarea.remove();
+    if (successful) {
+      resolve();
+    } else {
+      reject(new Error("copy command failed"));
+    }
+  });
+}
+
+function copyTextToClipboard(text) {
+  if (!text) {
+    return Promise.resolve();
+  }
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    return navigator.clipboard.writeText(text).catch(() => fallbackCopyText(text));
+  }
+  return fallbackCopyText(text);
 }
 
 function showActionSnackbar({
@@ -1949,8 +2539,13 @@ function showErrorSnackbar({ message, duration = DEFAULT_TOAST_DURATION } = {}) 
 
   const messageNode = document.createElement("div");
   messageNode.className = "default-snackbar__content";
-  messageNode.textContent = String(message);
+  const messageText = String(message);
+  messageNode.textContent = messageText;
   snackbar.appendChild(messageNode);
+  const instructionNode = document.createElement("div");
+  instructionNode.className = "default-snackbar__instruction default-snackbar__instruction--error";
+  instructionNode.textContent = ERROR_SNACKBAR_COPY_HINT;
+  snackbar.appendChild(instructionNode);
 
   const progress = document.createElement("div");
   progress.className = "default-snackbar__progress";
@@ -1988,7 +2583,10 @@ function showErrorSnackbar({ message, duration = DEFAULT_TOAST_DURATION } = {}) 
     );
   }
 
-  snackbar.addEventListener("click", dismiss);
+  snackbar.addEventListener("click", () => {
+    void copyTextToClipboard(messageText);
+    dismiss();
+  });
   snackbar.addEventListener("mouseenter", () => {
     if (paused || remaining <= 0) {
       return;
@@ -2697,10 +3295,6 @@ function openUserModal(user = null) {
   if (activeInput) {
     activeInput.checked = Boolean(user ? user.active : true);
   }
-  const msg = qs('#user-form-msg');
-  if (msg) {
-    msg.textContent = '';
-  }
   qs('#user-modal')?.classList.remove('hidden');
 }
 
@@ -2715,10 +3309,6 @@ function closeUserModal() {
     form.dataset.mode = 'add';
   }
   editingUserCode = '';
-  const msg = qs('#user-form-msg');
-  if (msg) {
-    msg.textContent = '';
-  }
 }
 
 // Opens the delete confirmation modal with the target user's name.
@@ -2968,12 +3558,32 @@ document.addEventListener('DOMContentLoaded', async () => {
       setActiveTab(tab);
     }
   });
-  qsa('[data-go-home]').forEach(button => {
-    button.addEventListener('click', () => {
-      setActiveTab('home');
-      button.blur();
-    });
-  });
+  const isEditableShortcutTarget = (element) => {
+    if (!element) return false;
+    if (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
+    ) {
+      return true;
+    }
+    if (element instanceof HTMLElement && element.isContentEditable) {
+      return true;
+    }
+    return false;
+  };
+  const handleHomeShortcut = (event) => {
+    if (event.key !== 'Home' || event.ctrlKey || event.metaKey || event.altKey) {
+      return;
+    }
+    const target = event.target instanceof Element ? event.target : document.activeElement;
+    if (isEditableShortcutTarget(target)) {
+      return;
+    }
+    event.preventDefault();
+    setActiveTab('home');
+  };
+  document.addEventListener('keydown', handleHomeShortcut);
 
   renderClock();
   setInterval(renderClock, 1000);
@@ -2997,20 +3607,44 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fullname = qs('#user-fullname').value.trim();
     const phone = qs('#user-phone').value.trim();
     const email = qs('#user-email').value.trim();
-    const msg = qs('#user-form-msg');
     const codeInput = qs('#user-code');
     const codeValue = (codeInput?.value ?? "").trim();
     const workId = qs('#user-work-id').value.trim();
     const idNumber = qs('#user-id-number').value.trim();
     const activeInput = qs('#user-active');
     const isActive = activeInput ? activeInput.checked : true;
-    if (!username) { msg.textContent = 'Username is required.'; return; }
-    if (!fullname) { msg.textContent = 'Full name is required.'; return; }
-    if (!/^\d{11}$/.test(phone)) { msg.textContent = 'Phone number must be 11 digits.'; return; }
-    if (!isValidEmail(email)) { msg.textContent = 'Please provide a valid email address.'; return; }
+    if (!username) {
+      showErrorSnackbar({ message: 'Username is required.' });
+      return;
+    }
+    if (!fullname) {
+      showErrorSnackbar({ message: 'Full name is required.' });
+      return;
+    }
+    const normalizedUsername = username.toLowerCase();
+    const usernameExists = USER_DB.some(u => {
+      if (editingUserCode && u.code === editingUserCode) {
+        return false;
+      }
+      const existingUsername = String(u.username ?? '').toLowerCase();
+      return existingUsername !== '' && existingUsername === normalizedUsername;
+    });
+    if (usernameExists) {
+      showErrorSnackbar({ message: 'Username already exists.' });
+      return;
+    }
+    if (!/^\d{11}$/.test(phone)) {
+      showErrorSnackbar({ message: 'Phone number must be 11 digits.' });
+      return;
+    }
+    if (!isValidEmail(email)) {
+      showErrorSnackbar({ message: 'Please provide a valid email address.' });
+      return;
+    }
     const normalizedPhone = normalizeDigits(phone);
     if (normalizedPhone.length !== 11) {
-      msg.textContent = 'Phone number must contain 11 digits.'; return;
+      showErrorSnackbar({ message: 'Phone number must contain 11 digits.' });
+      return;
     }
     const duplicatePhone = USER_DB.some(u => {
       if (editingUserCode && u.code === editingUserCode) {
@@ -3020,9 +3654,37 @@ document.addEventListener('DOMContentLoaded', async () => {
       return existingPhone !== '' && existingPhone === normalizedPhone;
     });
     if (duplicatePhone) {
-      msg.textContent = 'Phone number must be unique.'; return;
+      showErrorSnackbar({ message: 'Phone number must be unique.' });
+      return;
+    }
+    const normalizedEmail = email.toLowerCase();
+    if (normalizedEmail) {
+      const duplicateEmail = USER_DB.some(u => {
+        if (editingUserCode && u.code === editingUserCode) {
+          return false;
+        }
+        const existingEmail = String(u.email ?? '').toLowerCase();
+        return existingEmail !== '' && existingEmail === normalizedEmail;
+      });
+      if (duplicateEmail) {
+        showErrorSnackbar({ message: 'Email must be unique.' });
+        return;
+      }
     }
     const normalizedId = normalizeDigits(idNumber);
+    if (normalizedId) {
+      const duplicateIdNumber = USER_DB.some(u => {
+        if (editingUserCode && u.code === editingUserCode) {
+          return false;
+        }
+        const existingId = normalizeDigits(u.id_number ?? '');
+        return existingId !== '' && existingId === normalizedId;
+      });
+      if (duplicateIdNumber) {
+        showErrorSnackbar({ message: 'National ID must be unique.' });
+        return;
+      }
+    }
     const code = codeValue || getNextUserCode();
     const payload = {
       code,
@@ -3066,8 +3728,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         syncUserToBackend('update_user', payload);
         return;
       }
-      msg.textContent = 'User not found.';
-      showDefaultToast('User not found.');
+      showErrorSnackbar({ message: 'User not found.' });
       return;
     }
     const newUser = {
@@ -3277,6 +3938,71 @@ document.addEventListener('DOMContentLoaded', async () => {
         showErrorSnackbar({ message: "Failed to save timezone." });
       }
     });
+  });
+  instantBackupButton = qs("#instant-backup-btn");
+  backupImportInput = qs("#dev-db-backup-file");
+  backupImportTrigger = qs("#backup-import-trigger");
+  backupFileChosen = qs("#backup-file-chosen");
+  backupSettingsFormElement = qs("#backup-settings-form");
+  backupIntervalInput = qs("#auto-backup-interval");
+  backupLimitInput = qs("#auto-backup-limit");
+  backupSaveButton = qs("#save-backup-settings");
+  instantBackupButton?.addEventListener("click", () => {
+    void handleInstantBackup();
+  });
+  backupImportTrigger?.addEventListener("click", () => {
+    backupImportInput?.click();
+  });
+  backupImportInput?.addEventListener("change", async () => {
+    const file = backupImportInput?.files?.[0] ?? null;
+    if (!file) {
+      return;
+    }
+    setBackupFileLabel(file.name);
+    const confirmed = await showDialog(
+      'This will replace the current panel data with the imported backup. Continue?',
+      { confirm: true, title: 'Import backup', okText: 'Import', cancelText: 'Cancel' }
+    );
+    if (confirmed) {
+      await handleBackupImport(file);
+    } else {
+      backupImportInput.value = "";
+      setBackupFileLabel("No file selected.");
+    }
+  });
+  backupSettingsFormElement?.addEventListener("submit", handleBackupSettingsSave);
+  const backupHistoryContainer = qs("#backup-history");
+  backupHistoryContainer?.addEventListener("click", handleBackupActionClick);
+  applyBackupSettingsInputs();
+  setBackupFileLabel("No file selected.");
+  const developerSqlForm = qs("#developer-sql-form");
+  const sqlTextarea = qs("#dev-db-sql");
+  const clearSqlBtn = qs("#clear-sql-query");
+  developerSqlForm?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const query = (sqlTextarea?.value ?? "").trim();
+    if (query === "") {
+      showErrorSnackbar({ message: "Please enter a SQL statement." });
+      return;
+    }
+    clearSqlResult();
+    setSqlFormSubmitting(true);
+    try {
+      const response = await executeSqlQuery(query);
+      renderSqlResult(response);
+    } catch (error) {
+      showErrorSnackbar({
+        message: error?.message || "Failed to execute SQL query."
+      });
+    } finally {
+      setSqlFormSubmitting(false);
+    }
+  });
+  clearSqlBtn?.addEventListener("click", () => {
+    if (sqlTextarea) {
+      sqlTextarea.value = "";
+    }
+    clearSqlResult();
   });
   const galleryPhotoForms = qsa('[data-gallery-photo-form]');
   galleryPhotoModalElement = qs('#gallery-photo-modal');

@@ -48,7 +48,12 @@ $defaultData = [
         'title' => 'Great Panel',
         'timezone' => 'Asia/Tehran',
         'panelName' => 'Great Panel',
-        'siteIcon' => ''
+        'siteIcon' => '',
+        'backupSettings' => [
+            'autoIntervalMinutes' => 0,
+            'autoLimit' => 0,
+            'lastAutoBackupAt' => null
+        ]
     ]
 ];
 
@@ -114,6 +119,46 @@ function isPhoneTaken(string $phone, array $data, string $excludeCode = ''): boo
             continue;
         }
         if (normalizeDigits((string)($user['phone'] ?? '')) === $target) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function isEmailTaken(string $email, array $data, string $excludeCode = ''): bool
+{
+    $target = mb_strtolower(trim($email));
+    if ($target === '') {
+        return false;
+    }
+    foreach ((is_array($data['users'] ?? null) ? $data['users'] : []) as $user) {
+        if (!is_array($user)) {
+            continue;
+        }
+        if ($excludeCode !== '' && (string)($user['code'] ?? '') === $excludeCode) {
+            continue;
+        }
+        if (mb_strtolower(trim((string)($user['email'] ?? ''))) === $target) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function isIdNumberTaken(string $idNumber, array $data, string $excludeCode = ''): bool
+{
+    $target = normalizeDigits(trim($idNumber));
+    if ($target === '') {
+        return false;
+    }
+    foreach ((is_array($data['users'] ?? null) ? $data['users'] : []) as $user) {
+        if (!is_array($user)) {
+            continue;
+        }
+        if ($excludeCode !== '' && (string)($user['code'] ?? '') === $excludeCode) {
+            continue;
+        }
+        if (normalizeDigits((string)($user['id_number'] ?? '')) === $target) {
             return true;
         }
     }
@@ -226,6 +271,18 @@ if ($method === 'POST') {
         if (!isValidEmail($email)) {
             sendJsonResponse(['status' => 'error', 'message' => 'Please provide a valid email address.']);
         }
+        if (isEmailTaken($email, $data)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Email already exists.']);
+        }
+        if ($pdo && isEmailTakenInTable($pdo, $email)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Email already exists.']);
+        }
+        if (isIdNumberTaken($idNumber, $data)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'National ID already exists.']);
+        }
+        if ($pdo && isIdNumberTakenInTable($pdo, $idNumber)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'National ID already exists.']);
+        }
         $code = trim((string)($user['code'] ?? ''));
         if ($code === '' || isUserCodeTaken($code, $data)) {
             $code = generateNextUserCode($data);
@@ -280,6 +337,18 @@ if ($method === 'POST') {
             if ($email !== '') {
                 sendJsonResponse(['status' => 'error', 'message' => 'Please provide a valid email address.']);
             }
+        }
+        if ($email !== '' && isEmailTaken($email, $data, $code)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Email already exists.']);
+        }
+        if ($email !== '' && $pdo && isEmailTakenInTable($pdo, $email, $code)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Email already exists.']);
+        }
+        if ($idNumber !== '' && isIdNumberTaken($idNumber, $data, $code)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'National ID already exists.']);
+        }
+        if ($idNumber !== '' && $pdo && isIdNumberTakenInTable($pdo, $idNumber, $code)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'National ID already exists.']);
         }
         if ($pdo && isUsernameTaken($pdo, $username, $code)) {
             sendJsonResponse(['status' => 'error', 'message' => 'Username already exists.']);
@@ -336,6 +405,162 @@ if ($method === 'POST') {
         if (array_key_exists('siteIcon', $settings)) {
             $value = $settings['siteIcon'];
             $data['settings']['siteIcon'] = is_string($value) ? $value : '';
+        }
+    } elseif ($action === 'save_database_config' && !empty($payload['config']) && is_array($payload['config'])) {
+        if (!persistDatabaseConfigOverrides($payload['config'])) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Failed to save database configuration.']);
+        }
+        $updatedConfig = loadConfig($configFile);
+        $postResponse['message'] = 'Database configuration saved successfully.';
+        $postResponse['databaseConfig'] = getDatabaseConfigForResponse($updatedConfig);
+    } elseif ($action === 'download_database_backup') {
+        $package = prepareBackupPackage($data, $pdo, $config);
+        if ($package['payloadJson'] === null) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Failed to build backup payload.']);
+        }
+        $extension = $package['archive'] !== null ? 'zip' : 'json';
+        $content = $package['archive'] ?? $package['payloadJson'];
+        $encoding = $package['archive'] !== null ? 'base64' : null;
+        $payloadContent = $encoding === 'base64' ? base64_encode($content) : $content;
+        $entry = recordBackupPayload($content, 'manual', 0, $extension);
+        $filename = $entry['filename'] ?? sprintf('backup-%s.%s', date('YmdHis'), $extension);
+        $mime = $entry['mime'] ?? ($extension === 'zip' ? 'application/zip' : 'application/json');
+        $postResponse['message'] = 'Backup exported successfully.';
+        $postResponse['backup'] = $payloadContent;
+        $postResponse['encoding'] = $encoding;
+        $postResponse['mime'] = $mime;
+        $postResponse['filename'] = $filename;
+        $postResponse['backups'] = getBackupHistoryForResponse();
+    } elseif ($action === 'fetch_backup_file') {
+        $filename = sanitizeBackupFilename((string)($payload['filename'] ?? ''));
+        if ($filename === '') {
+            sendJsonResponse(['status' => 'error', 'message' => 'Invalid filename provided.']);
+        }
+        $path = getBackupFilePath($filename);
+        if ($path === '' || !is_file($path)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Backup file not found.']);
+        }
+        $content = file_get_contents($path);
+        if ($content === false) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Unable to read backup file.']);
+        }
+        $isArchive = isBackupArchiveContent($content);
+        $payloadContent = $isArchive ? base64_encode($content) : $content;
+        sendJsonResponse([
+            'status' => 'ok',
+            'content' => $payloadContent,
+            'encoding' => $isArchive ? 'base64' : null,
+            'mime' => $isArchive ? 'application/zip' : 'application/json',
+            'filename' => $filename
+        ]);
+    } elseif ($action === 'delete_backup_file') {
+        $filename = sanitizeBackupFilename((string)($payload['filename'] ?? ''));
+        if ($filename === '') {
+            sendJsonResponse(['status' => 'error', 'message' => 'Invalid filename provided.']);
+        }
+        deleteBackupFile($filename);
+        deleteBackupMetadataEntry($filename);
+        sendJsonResponse([
+            'status' => 'ok',
+            'message' => 'Backup deleted successfully.',
+            'backups' => getBackupHistoryForResponse()
+        ]);
+    } elseif ($action === 'apply_backup_by_filename') {
+        $filename = sanitizeBackupFilename((string)($payload['filename'] ?? ''));
+        if ($filename === '') {
+            sendJsonResponse(['status' => 'error', 'message' => 'Invalid filename provided.']);
+        }
+        $path = getBackupFilePath($filename);
+        if ($path === '' || !is_file($path)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Backup file not found.']);
+        }
+        $content = file_get_contents($path);
+        if ($content === false) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Unable to read backup file.']);
+        }
+        $decoded = decodeBackupPayloadContent($content);
+        if (!is_array($decoded)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Backup file is corrupted.']);
+        }
+        $data = normalizeData($decoded, $defaultData);
+        $postResponse['message'] = 'Backup applied successfully.';
+        $postResponse['backups'] = getBackupHistoryForResponse();
+    } elseif ($action === 'import_database_backup') {
+        if (!is_array($_FILES['backup'] ?? null)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'No backup file was provided.']);
+        }
+        $file = $_FILES['backup'];
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Backup upload failed.']);
+        }
+        $content = file_get_contents($file['tmp_name']);
+        if ($content === false) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Unable to read the uploaded backup.']);
+        }
+        $decoded = decodeBackupPayloadContent($content);
+        if (!is_array($decoded)) {
+            sendJsonResponse(['status' => 'error', 'message' => 'The backup file is not valid JSON.']);
+        }
+        $data = normalizeData($decoded, $defaultData);
+        $postResponse['message'] = 'Backup imported successfully.';
+        $postResponse['backups'] = getBackupHistoryForResponse();
+    } elseif ($action === 'save_backup_settings') {
+        $settings = is_array($payload['settings'] ?? null) ? $payload['settings'] : [];
+        $interval = max(0, (int)($settings['autoIntervalMinutes'] ?? 0));
+        $limit = max(0, (int)($settings['autoLimit'] ?? 0));
+        if (!isset($data['settings']) || !is_array($data['settings'])) {
+            $data['settings'] = [];
+        }
+        if (!isset($data['settings']['backupSettings']) || !is_array($data['settings']['backupSettings'])) {
+            $data['settings']['backupSettings'] = [];
+        }
+        $data['settings']['backupSettings']['autoIntervalMinutes'] = $interval;
+        $data['settings']['backupSettings']['autoLimit'] = $limit;
+        $postResponse['message'] = 'Auto-backup settings saved.';
+    } elseif ($action === 'run_sql_query') {
+        if (!$pdo) {
+            sendJsonResponse(['status' => 'error', 'message' => 'Unable to connect to the database.']);
+        }
+        $sql = trim((string)($payload['sql'] ?? ''));
+        if ($sql === '') {
+            sendJsonResponse(['status' => 'error', 'message' => 'SQL statement cannot be empty.']);
+        }
+        $isRead = preg_match('/^\s*(SELECT|SHOW|DESCRIBE|EXPLAIN|PRAGMA|WITH)\b/i', $sql) === 1;
+        try {
+            if ($isRead) {
+                $stmt = $pdo->query($sql);
+                if ($stmt === false) {
+                    throw new RuntimeException('Query execution failed.');
+                }
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                $columns = [];
+                $count = $stmt->columnCount();
+                for ($i = 0; $i < $count; $i++) {
+                    $meta = $stmt->getColumnMeta($i);
+                    $columns[] = $meta['name'] ?? "column{$i}";
+                }
+                $postResponse = [
+                    'status' => 'ok',
+                    'type' => 'select',
+                    'rows' => $rows,
+                    'columns' => $columns,
+                    'message' => 'Query executed successfully.',
+                    'hasMore' => false
+                ];
+                sendJsonResponse($postResponse);
+            }
+            $affected = $pdo->exec($sql);
+            $postResponse = [
+                'status' => 'ok',
+                'type' => 'exec',
+                'affectedRows' => $affected === false ? 0 : $affected,
+                'message' => 'Statement executed successfully.'
+            ];
+            sendJsonResponse($postResponse);
+        } catch (PDOException $err) {
+            sendJsonResponse(['status' => 'error', 'message' => $err->getMessage()]);
+        } catch (RuntimeException $err) {
+            sendJsonResponse(['status' => 'error', 'message' => $err->getMessage()]);
         }
     } elseif ($action === 'add_gallery_category') {
         if (!$pdo) {
@@ -451,7 +676,18 @@ $galleryPhotos = $pdo ? loadGalleryPhotos($pdo) : [];
 
 $data['galleryCategories'] = $galleryCategories;
 $data['galleryPhotos'] = $galleryPhotos;
+
+$autoBackupTriggered = false;
+if ($method !== 'POST') {
+    $autoBackupTriggered = maybeRunAutomaticBackup($data, $pdo, $config);
+    if ($autoBackupTriggered) {
+        persistData($data, $dataFile, $pdo, $config);
+    }
+}
+
 $data['databaseConnected'] = $pdo !== null;
+$data['databaseConfig'] = getDatabaseConfigForResponse($config);
+$data['backups'] = getBackupHistoryForResponse();
 
 echo json_encode($data);
 exit;
@@ -1031,4 +1267,261 @@ function deleteGalleryPhotoFile(string $relativePath, int $photoId): void
     if (is_file($thumbPath)) {
         @unlink($thumbPath);
     }
+}
+
+function buildBackupPayload(array $data, ?PDO $pdo, array $config): array
+{
+    $payload = $data;
+    unset($payload['databaseConnected'], $payload['databaseConfig'], $payload['backups']);
+    $payload['exported_at'] = date(DATE_ATOM);
+    $payload['databaseConnected'] = $pdo !== null;
+    $payload['databaseConfig'] = getDatabaseConfigForResponse($config);
+    return $payload;
+}
+
+function maybeRunAutomaticBackup(array &$data, ?PDO $pdo, array $config): bool
+{
+    $backupSettings = $data['settings']['backupSettings'] ?? [];
+    $interval = max(0, (int)($backupSettings['autoIntervalMinutes'] ?? 0));
+    if ($interval <= 0) {
+        return false;
+    }
+    $last = $backupSettings['lastAutoBackupAt'] ?? null;
+    $now = time();
+    $lastTs = $last ? strtotime((string)$last) ?: 0 : 0;
+    if ($last && ($now - $lastTs) < ($interval * 60)) {
+        return false;
+    }
+    $package = prepareBackupPackage($data, $pdo, $config);
+    if ($package['payloadJson'] === null) {
+        return false;
+    }
+    $content = $package['archive'] ?? $package['payloadJson'];
+    $extension = $package['archive'] !== null ? 'zip' : 'json';
+    $limit = max(0, (int)($backupSettings['autoLimit'] ?? 0));
+    $entry = recordBackupPayload($content, 'auto', $limit, $extension);
+    if (!$entry) {
+        return false;
+    }
+    if (!isset($data['settings']['backupSettings']) || !is_array($data['settings']['backupSettings'])) {
+        $data['settings']['backupSettings'] = [];
+    }
+    $data['settings']['backupSettings']['lastAutoBackupAt'] = date(DATE_ATOM, $now);
+    return true;
+}
+
+function prepareBackupPackage(array $data, ?PDO $pdo, array $config): array
+{
+    $payload = buildBackupPayload($data, $pdo, $config);
+    $payloadJson = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    $databaseName = trim((string)($config['dbname'] ?? ''));
+    $sqlDump = null;
+    if ($pdo && $databaseName !== '') {
+        $sqlDump = buildSqlDump($pdo, $databaseName);
+    }
+    $archive = null;
+    if ($payloadJson !== false) {
+        $archive = buildBackupArchive($payloadJson, $sqlDump, __DIR__ . '/../uploads');
+    }
+    return [
+        'payload' => $payload,
+        'payloadJson' => $payloadJson === false ? null : $payloadJson,
+        'archive' => $archive
+    ];
+}
+
+function buildSqlDump(PDO $pdo, string $databaseName): ?string
+{
+    $databaseName = trim($databaseName);
+    if ($databaseName === '') {
+        return null;
+    }
+    $quotedDbName = '`' . str_replace('`', '``', $databaseName) . '`';
+    $lines = [
+        sprintf('CREATE DATABASE IF NOT EXISTS %s CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;', $quotedDbName),
+        sprintf('USE %s;', $quotedDbName),
+        'SET FOREIGN_KEY_CHECKS = 0;'
+    ];
+
+    try {
+        $tables = $pdo->query('SHOW FULL TABLES')->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $err) {
+        error_log('Failed to list tables for backup: ' . $err->getMessage());
+        return null;
+    }
+    foreach ($tables as $row) {
+        $tableName = '';
+        $tableType = '';
+        foreach ($row as $key => $value) {
+            if ($tableName === '') {
+                $tableName = (string)$value;
+                continue;
+            }
+            if (strcasecmp($key, 'Table_type') === 0) {
+                $tableType = (string)$value;
+            }
+        }
+        $tableName = trim($tableName);
+        if ($tableName === '' || strcasecmp($tableType, 'VIEW') === 0) {
+            continue;
+        }
+        $quotedTable = '`' . str_replace('`', '``', $tableName) . '`';
+
+        try {
+            $stmt = $pdo->query(sprintf('SHOW CREATE TABLE %s', $quotedTable));
+            $createRow = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+        } catch (PDOException $err) {
+            error_log('Failed to read table definition for ' . $tableName . ': ' . $err->getMessage());
+            continue;
+        }
+        $createSql = '';
+        if (is_array($createRow)) {
+            $createSql = $createRow['Create Table'] ?? $createRow['Create View'] ?? '';
+        }
+        if ($createSql !== '') {
+            $lines[] = sprintf('DROP TABLE IF EXISTS %s;', $quotedTable);
+            $lines[] = $createSql . ';';
+        }
+
+        try {
+            $dataStmt = $pdo->query(sprintf('SELECT * FROM %s', $quotedTable));
+        } catch (PDOException $err) {
+            error_log('Failed to dump rows from ' . $tableName . ': ' . $err->getMessage());
+            continue;
+        }
+        $columnClause = '';
+        $columnNames = [];
+        while ($rowData = $dataStmt->fetch(PDO::FETCH_ASSOC)) {
+            if ($columnClause === '') {
+                $columnNames = array_keys($rowData);
+                $quotedColumns = array_map(static function ($column) {
+                    return '`' . str_replace('`', '``', $column) . '`';
+                }, $columnNames);
+                $columnClause = implode(', ', $quotedColumns);
+            }
+            $values = [];
+            foreach ($columnNames as $column) {
+                $value = $rowData[$column] ?? null;
+                if ($value === null) {
+                    $values[] = 'NULL';
+                    continue;
+                }
+                $values[] = $pdo->quote($value);
+            }
+            $lines[] = sprintf(
+                'INSERT INTO %s (%s) VALUES (%s);',
+                $quotedTable,
+                $columnClause,
+                implode(', ', $values)
+            );
+        }
+    }
+
+    $lines[] = 'SET FOREIGN_KEY_CHECKS = 1;';
+    return implode("\n\n", $lines) . "\n";
+}
+
+function buildBackupArchive(string $payloadJson, ?string $sqlDump, string $uploadsDir): ?string
+{
+    if (!class_exists('ZipArchive')) {
+        return null;
+    }
+    $temp = @tempnam(sys_get_temp_dir(), 'gp-backup-');
+    if ($temp === false) {
+        return null;
+    }
+    $zip = new ZipArchive();
+    if ($zip->open($temp, ZipArchive::OVERWRITE) !== true) {
+        @unlink($temp);
+        return null;
+    }
+    $zip->addFromString('payload.json', $payloadJson);
+    if ($sqlDump !== null) {
+        $zip->addFromString('database.sql', $sqlDump);
+    }
+    if (is_dir($uploadsDir)) {
+        addDirectoryToZip($zip, $uploadsDir, 'uploads');
+    }
+    $zip->close();
+    $content = file_get_contents($temp);
+    @unlink($temp);
+    return $content === false ? null : $content;
+}
+
+function addDirectoryToZip(ZipArchive $zip, string $directory, string $relativePrefix): void
+{
+    $root = rtrim($directory, '/\\');
+    if ($root === '' || !is_dir($root)) {
+        return;
+    }
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::SELF_FIRST
+    );
+    foreach ($iterator as $item) {
+        if (!$item->isFile()) {
+            continue;
+        }
+        $path = $item->getRealPath();
+        if ($path === false) {
+            continue;
+        }
+        $relative = substr($path, strlen($root) + 1);
+        if ($relative === false) {
+            continue;
+        }
+        $normalized = str_replace(['\\', '/'], '/', $relative);
+        $prefix = rtrim($relativePrefix, '/');
+        $name = $prefix === '' ? $normalized : $prefix . '/' . $normalized;
+        $zip->addFile($path, $name);
+    }
+}
+
+function isBackupArchiveContent(string $content): bool
+{
+    return strlen($content) >= 2 && substr($content, 0, 2) === 'PK';
+}
+
+function decodeBackupPayloadContent(string $content): ?array
+{
+    if ($content === '') {
+        return null;
+    }
+    $decoded = json_decode($content, true);
+    if (is_array($decoded)) {
+        return $decoded;
+    }
+    if (!isBackupArchiveContent($content) || !class_exists('ZipArchive')) {
+        return null;
+    }
+    $temp = @tempnam(sys_get_temp_dir(), 'gp-backup-zip-');
+    if ($temp === false || file_put_contents($temp, $content) === false) {
+        @unlink($temp);
+        return null;
+    }
+    $zip = new ZipArchive();
+    $payload = null;
+    if ($zip->open($temp) === true) {
+        $index = $zip->locateName('payload.json', ZipArchive::FL_NOCASE);
+        if ($index !== false) {
+            $payloadJson = $zip->getFromIndex($index);
+            if ($payloadJson !== false) {
+                $payload = json_decode($payloadJson, true);
+            }
+        }
+        $zip->close();
+    }
+    @unlink($temp);
+    return is_array($payload) ? $payload : null;
+}
+
+function getBackupHistoryForResponse(): array
+{
+    $history = loadBackupMetadata();
+    usort($history, function ($a, $b) {
+        $aTime = isset($a['created_at']) ? strtotime($a['created_at']) : 0;
+        $bTime = isset($b['created_at']) ? strtotime($b['created_at']) : 0;
+        return $bTime <=> $aTime;
+    });
+    return $history;
 }

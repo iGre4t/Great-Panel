@@ -1,46 +1,5 @@
 {
-    "users": [
-        {
-            "name": "Demo User 1",
-            "phone": "09123456789",
-            "active": true
-        },
-        {
-            "name": "Demo User 2",
-            "phone": "09350001122",
-            "active": false
-        },
-        {
-            "code": "000002",
-            "name": "dehghani",
-            "phone": "09102023636",
-            "work_id": "709849161",
-            "id_number": "2289998566",
-            "active": false,
-            "createdAt": 1764754597
-        },
-        {
-            "code": "000003",
-            "username": "dehghani",
-            "name": "مهدی دهقانی",
-            "phone": "09120003366",
-            "work_id": "709816",
-            "id_number": "3265215616",
-            "active": true,
-            "createdAt": 1764755022
-        },
-        {
-            "code": "000004",
-            "username": "dehghani",
-            "name": "مهدی دهقانی",
-            "phone": "09122414561",
-            "work_id": "4342232",
-            "id_number": "2345674567",
-            "email": "dehghani@mci.ir",
-            "active": true,
-            "createdAt": 1765190636
-        }
-    ],
+    "users": [],
     "branches": [
         {
             "id": "branch-main",
@@ -70,9 +29,14 @@
         }
     ],
     "settings": {
-        "title": "Great Panel2",
+        "title": "Great Panel",
         "timezone": "Asia\/Tehran",
         "panelName": "Great Panel",
-        "siteIcon": ""
+        "siteIcon": "uploads\/gallery\/gallery-69309ec5cc5647.53184842.svg",
+        "backupSettings": {
+            "autoIntervalMinutes": 0,
+            "autoLimit": 0,
+            "lastAutoBackupAt": null
+        }
     }
 }

@@ -1,5 +1,16 @@
-﻿<?php
+<?php
+declare(strict_types=1);
+
 session_start();
+require_once __DIR__ . '/api/lib/common.php';
+
+if (databaseConfigRequiresInstallation()) {
+  $configFile = __DIR__ . '/api/config.php';
+  if (!is_file($configFile)) {
+    header('Location: install.php');
+    exit;
+  }
+}
 
 if (!empty($_SESSION['authenticated'])) {
   header('Location: panel.php');
@@ -22,6 +33,17 @@ try {
   $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
 } catch (PDOException $error) {
   $connectionError = 'Database connection failed.';
+}
+
+if (!$connectionError && $pdo && !isInstallComplete()) {
+  try {
+    $countStmt = $pdo->query('SELECT COUNT(*) FROM `users`');
+    if ((int)$countStmt->fetchColumn() > 0) {
+      markInstallComplete();
+    }
+  } catch (PDOException $exception) {
+    // Ignore; lock file will be created later when the installer finishes or a user logs in.
+  }
 }
 
 $errors = [];
@@ -92,7 +114,7 @@ function buildUserDisplayName(array $user = []): string
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Admin Panel</title>
     <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="style/styles.css" />
     <style>
       body.login-body {
         min-height: 100vh;

@@ -8,7 +8,12 @@ const DEFAULT_PANEL_SETTINGS = [
   'title' => 'Great Panel',
   'timezone' => 'Asia/Tehran',
   'panelName' => 'Panel in progress',
-  'siteIcon' => ''
+  'siteIcon' => '',
+  'backupSettings' => [
+    'autoIntervalMinutes' => 0,
+    'autoLimit' => 0,
+    'lastAutoBackupAt' => null
+  ]
 ];
 
 function formatSiteIconUrlForHtml($value = '') {
@@ -98,9 +103,9 @@ $accountEmail = $currentUser['email'] ?? '';
     <title><?= htmlspecialchars($panelTitle, ENT_QUOTES, 'UTF-8') ?></title>
     <meta name="color-scheme" content="light" />
     <link rel="icon" id="site-icon-link" href="<?= htmlspecialchars($panelSiteIconUrl ?: 'data:,', ENT_QUOTES, 'UTF-8') ?>" />
-    <link rel="preload" href="fonts/remixicon.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
-    <link rel="stylesheet" href="styles.css" />
-    <link rel="stylesheet" href="remixicon.css" />
+    <link rel="preload" href="style/fonts/remixicon.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
+    <link rel="stylesheet" href="style/styles.css" />
+    <link rel="stylesheet" href="style/remixicon.css" />
   </head>
   <body>
     <!-- Loader remains until app.js finishes initializing the view and hides this element. -->
@@ -182,15 +187,6 @@ $accountEmail = $currentUser['email'] ?? '';
         <!-- Top bar displays the current tab title and hooks into sidebar toggle + live clock logic defined in app.js. -->
         <header class="topbar">
           <button id="sidebarToggle" class="icon-btn" title="Toggle sidebar" aria-label="Toggle sidebar">≡</button>
-          <button
-            type="button"
-            class="icon-btn"
-            data-go-home
-            title="Go to home tab"
-            aria-label="Go to home tab"
-          >
-            <span class="ri ri-home-4-line" aria-hidden="true"></span>
-          </button>
           <h2 id="page-title">Home</h2>
           <div class="spacer"></div>
           <div id="live-clock" class="clock" aria-live="polite"></div>
@@ -340,6 +336,9 @@ $accountEmail = $currentUser['email'] ?? '';
                   <button type="button" class="sub-item" data-pane="beta-test">
                     Beta Test
                   </button>
+                  <button type="button" class="sub-item" data-pane="database">
+                    Database
+                  </button>
                 </div>
               </aside>
               <div class="sub-content">
@@ -463,6 +462,105 @@ $accountEmail = $currentUser['email'] ?? '';
                     <p class="hint">Trigger a toast-style notification for testing.</p>
                   </div>
                 </div>
+                <div class="sub-pane" data-pane="database">
+                  <div class="card settings-section">
+                    <div class="section-header">
+                      <h3>Database Import / export</h3>
+                    </div>
+                    <p class="hint">
+                      Export the current database snapshot, import a previously downloaded file, and configure automated backups
+                      without leaving the panel.
+                    </p>
+                    <div class="form single-column">
+                      <label class="field standard-width">
+                        <span>Instant backup</span>
+                        <button type="button" class="btn primary full-width" id="instant-backup-btn">
+                          Download backup
+                        </button>
+                      </label>
+                      <label class="field standard-width">
+                        <span>Import backup</span>
+                        <div class="backup-import-control">
+                          <button type="button" class="btn ghost small" id="backup-import-trigger">
+                            Select file
+                          </button>
+                          <span id="backup-file-chosen" class="backup-file-chosen">No file selected.</span>
+                          <input id="dev-db-backup-file" type="file" accept=".json" class="backup-file-input" hidden />
+                        </div>
+                      </label>
+                    </div>
+                    <form id="backup-settings-form" class="form single-column">
+                      <label class="field standard-width">
+                        <span>Auto-backup interval (minutes)</span>
+                        <input
+                          id="auto-backup-interval"
+                          type="number"
+                          min="0"
+                          placeholder="0 = disabled"
+                          class="numeric-field"
+                        />
+                      </label>
+                      <label class="field standard-width">
+                        <span>Automatic backup storage limit</span>
+                        <input
+                          id="auto-backup-limit"
+                          type="number"
+                          min="0"
+                          placeholder="0 = unlimited"
+                          class="numeric-field"
+                        />
+                      </label>
+                      <div class="section-footer auto-backup-actions">
+                        <button type="submit" class="btn primary" id="save-backup-settings">
+                          Save auto-backup settings
+                        </button>
+                      </div>
+                    </form>
+                    <p class="hint backup-history-hint">
+                      Backups below include instant snapshots and scheduled copies. Automatic versions respect the storage limit you
+                      configure.
+                    </p>
+                    <div class="backup-history" id="backup-history"></div>
+                  </div>
+                  <div class="card settings-section">
+                    <div class="section-header">
+                      <h3>Database SQL console</h3>
+                    </div>
+                    <p class="hint sql-console-hint">
+                      Run SQL directly on the connected database without opening phpMyAdmin.
+                    </p>
+                    <p class="hint sql-console-status muted" id="dev-sql-status">
+                      Checking database connection...
+                    </p>
+                    <form id="developer-sql-form" class="form">
+                      <label class="field full">
+                        <span>SQL query</span>
+                        <textarea
+                          id="dev-db-sql"
+                          class="sql-editor"
+                          dir="ltr"
+                          spellcheck="false"
+                          rows="10"
+                          placeholder="SELECT * FROM gallery ORDER BY uploaded_at DESC LIMIT 10"
+                        ></textarea>
+                      </label>
+                      <div class="section-footer sql-console-footer">
+                        <div class="sql-console-actions">
+                          <button type="submit" class="btn primary" id="run-sql-query">
+                            Run SQL
+                          </button>
+                          <button type="button" class="btn ghost" id="clear-sql-query">
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+                    <div id="dev-sql-result" class="sql-result hidden" aria-live="polite">
+                      <p class="muted" data-sql-result-message></p>
+                      <div data-sql-result-body></div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -556,7 +654,6 @@ $accountEmail = $currentUser['email'] ?? '';
             <button type="button" class="btn" id="user-cancel">Cancel</button>
             <button type="submit" class="btn primary">Add</button>
           </div>
-          <p id="user-form-msg" class="hint"></p>
         </form>
       </div>
     </div>
